@@ -9,9 +9,9 @@ const LIFT = -500;     // Pixels per second (instantaneous velocity change, adju
 const BEHOLDER_SIZE_FACTOR = 0.08; // <<< Relative size (e.g., 8% of height)
 const OBSTACLE_WIDTH_FACTOR = 0.1; // <<< Relative width (e.g., 10% of height)
 const OBSTACLE_COLLISION_WIDTH_FACTOR = 0.6; // Keep this from previous step
-const OBSTACLE_GAP_FACTOR = 0.35; // <<< Relative gap (e.g., 28% of height)
-const OBSTACLE_SPEED_FACTOR = 0.5; // <<< Relative speed (e.g., pixels per second = factor * canvas.width)
-const OBSTACLE_SPAWN_DISTANCE_FACTOR = 0.4; // <<< Relative spawn distance (e.g., 40% of canvas.width)
+const OBSTACLE_GAP_FACTOR = 0.25; // <<< Relative gap (e.g., 28% of height)
+const OBSTACLE_SPEED_FACTOR = 0.6; // <<< Relative speed (e.g., pixels per second = factor * canvas.width)
+const OBSTACLE_SPAWN_DISTANCE_FACTOR = 0.5; // <<< Relative spawn distance (e.g., 40% of canvas.width)
 const OBSTACLE_VERTICAL_MARGIN_FACTOR = 0.08; // <<< Relative margin (e.g., 8% of height from top/ground)
 const ANIMATION_THROTTLE = 20; // Keep animation frame-based for now, or adjust later
 const MAX_UP_ROTATION_DEG = -15; // Max upward tilt in degrees (negative for up)
