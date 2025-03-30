@@ -87,16 +87,14 @@ function resetGame() {
     gameState = 'start';
     animationFrameIndex = 0; // Reset animation frame on game reset
     spawnInitialObstacles();
-    console.log("Game Reset for new size");
+    console.log("Game Reset");
 }
 
 function spawnInitialObstacles() {
-    obstacles = []; // Clear existing
-    // Example: Spawn first obstacle relative to the right edge
-    let startX = canvas.width * 0.8; // Start spawning partway across the screen
-    addObstacle(startX);
-     // Add more if needed, spaced based on constants/canvas width
-     // addObstacle(startX + OBSTACLE_SPAWN_DISTANCE);
+     // Start first obstacle further out
+    addObstacle(canvas.width + 100);
+    addObstacle(canvas.width + 100 + OBSTACLE_SPAWN_DISTANCE);
+    addObstacle(canvas.width + 100 + 2 * OBSTACLE_SPAWN_DISTANCE);
 }
 
 // --- Game Objects ---
@@ -192,11 +190,12 @@ function Obstacle(x, gapY) {
     };
 } // <--- THIS is the single, correct closing brace for the constructor function
 
-function addObstacle(startX) {
-    // Calculate gap position relative to canvas height
-    let gapCenterY = Math.random() * (canvas.height - OBSTACLE_GAP * 2) + OBSTACLE_GAP;
-    obstacles.push(new Obstacle(startX, gapCenterY));
-    console.log(`Added obstacle at x=${startX}`);
+function addObstacle(xPos) {
+    // Calculate a random gap position, ensuring it's not too close to the top/bottom edges
+    const minGapY = OBSTACLE_GAP / 2 + 30; // Min distance from top
+    const maxGapY = canvas.height - OBSTACLE_GAP / 2 - 30; // Min distance from bottom
+    const gapY = Math.random() * (maxGapY - minGapY) + minGapY;
+    obstacles.push(new Obstacle(xPos, gapY));
 }
 
 function manageObstacles() {
@@ -276,16 +275,10 @@ function drawBackground() {
     // Use the image's natural width and the canvas's height.
     // Make sure the background image is loaded before drawing
     if (backgroundImg.complete && backgroundImg.naturalHeight !== 0) {
-        // Example: Tiling (assuming background width is less than canvas width sometimes)
-        let bgWidth = backgroundImg.width;
-        let bgHeight = backgroundImg.height; // Use actual image height for ratio
-        let scale = canvas.height / bgHeight; // Scale to fit height
-        let scaledWidth = bgWidth * scale;
-        let x = 0;
-        while (x < canvas.width) {
-            ctx.drawImage(backgroundImg, x, 0, scaledWidth, canvas.height);
-            x += scaledWidth;
-        }
+         ctx.drawImage(backgroundImg, 0, 0, canvas.width, canvas.height);
+         // Note: This stretches/shrinks the image width to fit the canvas width (400px).
+         // If you want to preserve the image's aspect ratio or tile it,
+         // the drawing logic would need to be more complex.
     } else {
          // Optional fallback: Draw solid color if image isn't ready yet
          ctx.fillStyle = '#1a111e'; // Match CSS background
@@ -424,36 +417,13 @@ function startGameIfReady() {
     }
 }
 
-// --- Add a function to handle resizing ---
-function resizeCanvas() {
-    // Get the actual displayed size from CSS
-    const displayWidth = canvas.clientWidth;
-    const displayHeight = canvas.clientHeight;
+// --- Start the Game ---
+// Initialize variables
 
-    // Check if the drawing surface size needs to be updated
-    if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
-        canvas.width = displayWidth;
-        canvas.height = displayHeight;
-        console.log(`Resized canvas to: ${canvas.width}x${canvas.height}`);
+// !! REMOVE this call to resetGame() from the global scope !!
+// resetGame(); // This was line 384 - REMOVE OR COMMENT OUT
 
-        // IMPORTANT: Re-initialize or adjust game elements based on new size
-        // This might involve calling resetGame or parts of it,
-        // depending on how positions are calculated.
-        // If resetGame fully relies on canvas.width/height, calling it might be enough.
-        // Ensure resetGame repositions beholder and obstacles correctly for the new size.
-         if(ctx) { // Only reset if ctx is ready
-             resetGame(); // Example: Recalculate positions based on new dimensions
-         }
-
-        // You might want to redraw the current screen immediately after resize
-        // drawBackground(); // Example
-        // drawScore(); // Example
-        // Draw obstacles in their current (potentially reset) positions
-        // Draw beholder in its reset position
-    }
-}
-
-// --- Modify window.onload ---
+// Ensure game initialization happens after the HTML document is fully loaded
 window.onload = function() {
     console.log("Window loaded.");
     canvas = document.getElementById('gameCanvas');
@@ -466,10 +436,6 @@ window.onload = function() {
         console.error("Failed to get 2D rendering context.");
         return;
     }
-
-    // --- Initial Canvas Size Setup ---
-    // Set initial drawing surface size based on initial CSS size
-    resizeCanvas(); // Call resizeCanvas once initially
 
     // Add Event Listeners (as previously corrected)
     document.addEventListener('keydown', function(e) {
@@ -488,17 +454,17 @@ window.onload = function() {
     });
     // --- End of Added Event Listeners ---
 
-    // Call resetGame AFTER initial canvas size is set
-    // resetGame(); // resizeCanvas now calls this
+    // Call resetGame AFTER canvas is defined (this call is correct)
+    resetGame(); // Keep this call inside window.onload
 
-    // Initialize game objects AFTER canvas size is set
-    // ... object initializations if any are needed outside resetGame ...
+    // Initialize other game objects AFTER canvas is defined
+    // dragon = new Dragon(50, canvas.height / 2); // Example
+    // pipes = new Pipes(canvas); // Example
 
+    // Setup animation frames AFTER images are loaded (potentially already loaded)
+    // Or ensure setupAnimationFrames is robust enough if called before load complete
     setupAnimationFrames();
 
     isWindowLoaded = true;
-    startGameIfReady(); // Check if images are already loaded
-
-    // --- Add Resize Listener ---
-    window.addEventListener('resize', resizeCanvas);
+    startGameIfReady();
 };
