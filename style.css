@@ -1,4 +1,8 @@
-body {
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -10,7 +14,11 @@ body {
 }
 
 .container {
-    text-align: center;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 h1 {
@@ -21,10 +29,10 @@ h1 {
 }
 
 canvas {
-    border: 5px solid #4a2e4f;
-    background-color: #1a111e; 
     display: block;
-    margin: 0 auto;
+    width: 100vw;
+    height: 100vh;
+    object-fit: contain;
 }
 
 .controls {
