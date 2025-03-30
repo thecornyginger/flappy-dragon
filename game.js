@@ -1,56 +1,79 @@
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
+// Declare canvas and ctx in the global scope
+let canvas;
+let ctx;
+let isWindowLoaded = false; // <-- Add this flag
 
 // --- Game Constants ---
-const GRAVITY = 0.1; // FALL SPEED
-const LIFT = -3;    // FLAPPING
-const BEHOLDER_SIZE = 50; // Diameter
+const GRAVITY = 0.15;
+const LIFT = -4;
+const BEHOLDER_SIZE = 50;
 const OBSTACLE_WIDTH = 60;
-const OBSTACLE_GAP = 150; // Vertical space between stalactite and stalagmite
-const OBSTACLE_SPEED = 1.5;
-const OBSTACLE_SPAWN_DISTANCE = 200; // Horizontal distance between obstacle pairs
+const OBSTACLE_COLLISION_WIDTH_FACTOR = 0.6; // Keep this from previous step
+const OBSTACLE_GAP = 150;
+const OBSTACLE_SPEED = 1.5; // Keep slowed-down speed
+const OBSTACLE_SPAWN_DISTANCE = 200;
+const ANIMATION_SPEED = 15; // Change frame every 5 game loops (adjust as needed)
 
 // --- Image Loading Management ---
 let imagesLoaded = 0;
-// Adjust totalImages if you're not using all 4 (e.g., no background)
-const totalImages = 4; // Beholder, Stalactite, Stalagmite, Background
+// !! IMPORTANT: Update totalImages to 6 !!
+const totalImages = 6; // Beholder(mid), DownFlap, UpFlap, Stalactite, Stalagmite, Background
 let allImagesLoaded = false;
 
 function imageLoaded() {
     imagesLoaded++;
-    console.log(`Loaded image ${imagesLoaded}/${totalImages}`); // Optional: for debugging
-    if (imagesLoaded === totalImages) {
-        allImagesLoaded = true;
-        console.log("All images loaded, starting game loop.");
-        // !! Important: Start the game loop ONLY when all images are loaded !!
-        gameLoop();
-    }
+    console.log(`Image ${imagesLoaded}/${totalImages} loaded.`); // Add for debugging
+    // No need to check totalImages here, startGameIfReady does it
+    startGameIfReady(); // Check if the window is also loaded
 }
 
 // --- Game Variables ---
 let beholderY;
 let beholderVelY;
 let score;
-let obstacles; // Array to hold obstacle objects
+let obstacles;
 let frameCount;
-let gameState; // 'start', 'playing', 'gameOver'
+let gameState;
+let animationFrameIndex = 0; // Start at the first frame (down-flap)
+let beholderFrames = []; // Array to hold the animation image objects
 
-// --- Asset Placeholders (Now Loading Actual Images) ---
-let beholderImg = new Image();
+// --- Asset Loading ---
+let beholderImg = new Image();         // Mid-flap (original)
+let beholderDownFlapImg = new Image(); // Down-flap
+let beholderUpFlapImg = new Image();   // Up-flap
 let stalactiteImg = new Image();
 let stalagmiteImg = new Image();
-let backgroundImg = new Image(); // Make sure this line exists if using background
+let backgroundImg = new Image();
 
-// Set the source paths AFTER creating the Image objects
-beholderImg.src = 'images/beholder.png';
+// Set the source paths
+beholderImg.src = 'images/beholder.png';             // Mid-flap
+beholderDownFlapImg.src = 'images/beholder-downflap.png'; // Down-flap image file
+beholderUpFlapImg.src = 'images/beholder-upflap.png';   // Up-flap image file
 stalactiteImg.src = 'images/stalactite.png';
 stalagmiteImg.src = 'images/stalagmite.png';
-backgroundImg.src = 'images/background.png'; // Path to your background
+backgroundImg.src = 'images/background.png';
 
+// Assign onload handlers
 beholderImg.onload = imageLoaded;
+beholderDownFlapImg.onload = imageLoaded; // Add onload for new image
+beholderUpFlapImg.onload = imageLoaded;   // Add onload for new image
 stalactiteImg.onload = imageLoaded;
+stalagmiteImg.src = 'images/stalagmite.png';
 stalagmiteImg.onload = imageLoaded;
-backgroundImg.onload = imageLoaded; // Add this for the background too
+backgroundImg.onload = imageLoaded;
+
+// --- Helper function to set up the animation array ---
+// (Call this after images are potentially loaded)
+function setupAnimationFrames() {
+    beholderFrames = [
+        beholderDownFlapImg, // Frame 0
+        beholderImg,         // Frame 1 (Mid)
+        beholderUpFlapImg    // Frame 2
+    ];
+    // Optional: You could add the mid-flap again to make the cycle smoother
+    // beholderFrames = [beholderDownFlapImg, beholderImg, beholderUpFlapImg, beholderImg];
+    // If you do this, make sure the modulo logic (%) later uses the correct array length.
+}
 
 // --- Game Initialization ---
 function resetGame() {
@@ -60,8 +83,9 @@ function resetGame() {
     obstacles = [];
     frameCount = 0;
     gameState = 'start';
-    // Spawn initial obstacles off-screen
+    animationFrameIndex = 0; // Reset animation frame on game reset
     spawnInitialObstacles();
+    isGameOver = false;
 }
 
 function spawnInitialObstacles() {
@@ -73,38 +97,54 @@ function spawnInitialObstacles() {
 
 // --- Game Objects ---
 function Beholder() {
-    // --- Drawing ---
-    /* // Comment out or delete placeholder:
-    ctx.fillStyle = '#8b0000';
-    ctx.beginPath();
-    ctx.arc(canvas.width / 3, beholderY, BEHOLDER_SIZE / 2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#FFFF00';
-    ctx.beginPath();
-    ctx.arc(canvas.width / 3 + 5, beholderY, BEHOLDER_SIZE / 4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#000000';
-    ctx.beginPath();
-    ctx.arc(canvas.width / 3 + 5, beholderY, BEHOLDER_SIZE / 8, 0, Math.PI * 2);
-    ctx.fill();
-    */
-    ctx.drawImage(beholderImg, canvas.width / 3 - BEHOLDER_SIZE / 2, beholderY - BEHOLDER_SIZE / 2, BEHOLDER_SIZE, BEHOLDER_SIZE);
 
-    // --- Updating ---
+    // --- Update Animation Frame ---
+    // (Keep this animation logic exactly as it is)
+    if (gameState === 'playing' || gameState === 'start') {
+        if (frameCount % ANIMATION_SPEED === 0) {
+            animationFrameIndex = (animationFrameIndex + 1) % beholderFrames.length;
+        }
+    }
+    let currentFrameImg = beholderFrames[animationFrameIndex] || beholderImg;
+
+
+    // --- Drawing (REVISED LOGIC) ---
+    let imageToDraw = null; // Start assuming no image can be drawn yet
+
+    // Prioritize drawing the current animation frame if it's ready
+    if (currentFrameImg && currentFrameImg.complete && currentFrameImg.naturalHeight !== 0) {
+        imageToDraw = currentFrameImg;
+    }
+    // If the animation frame isn't ready, try the fallback (mid-flap) image
+    else if (beholderImg && beholderImg.complete && beholderImg.naturalHeight !== 0) {
+        imageToDraw = beholderImg;
+    }
+
+    // Now, ONLY if we selected a valid image, draw it.
+    if (imageToDraw) {
+        // ctx should definitely be defined globally here
+        ctx.drawImage(
+            imageToDraw,
+            canvas.width / 3 - BEHOLDER_SIZE / 2, // Centered X
+            beholderY - BEHOLDER_SIZE / 2,       // Centered Y
+            BEHOLDER_SIZE,                       // Width
+            BEHOLDER_SIZE                        // Height
+        );
+    }
+    // If neither image is ready, nothing is drawn (better than an error)
+
+
+    // --- Updating Position (Keep this logic) ---
+    // (Keep the position update logic exactly as it is)
     if (gameState === 'playing') {
         beholderVelY += GRAVITY;
         beholderY += beholderVelY;
     }
-
-    // Prevent moving during start/game over (but still draw)
-    // Apply bobbing effect only during 'start' state
     if (gameState === 'start') {
-        // Gentle bobbing effect on start screen
          beholderY = canvas.height / 2 + Math.sin(frameCount * 0.1) * 5;
-         // Ensure velocity stays zero during start screen bobbing
          beholderVelY = 0;
     }
-} // <------------------------------------- THIS IS THE CORRECT SINGLE ENDING BRACE
+} // End of Beholder function
 
 function Obstacle(x, gapY) {
     // --- Properties (Must be inside the constructor) ---
@@ -136,11 +176,22 @@ function Obstacle(x, gapY) {
     }; // Semicolon optional but fine
 
     this.update = function() {
-        if (gameState === 'playing') {
-            this.x -= OBSTACLE_SPEED;
-        }
-    }; // Semicolon optional but fine
+        this.x -= OBSTACLE_SPEED;
 
+        // Check for scoring
+        // Use the adjusted collision width for scoring as well
+        let collisionX = canvas.width / 3; // Beholder's X position
+        let obstacleCollisionRightEdge = this.x + (OBSTACLE_WIDTH * OBSTACLE_COLLISION_WIDTH_FACTOR);
+
+        if (!this.scored && this.x + OBSTACLE_WIDTH < collisionX) {
+             // Check if the beholder has passed the obstacle's visual right edge
+            if (this.x + OBSTACLE_WIDTH < collisionX - (BEHOLDER_SIZE * 0.5)) { // Adjusted check
+                score++;
+                this.scored = true;
+                console.log("Score:", score); // For debugging
+            }
+        }
+    };
 } // <--- THIS is the single, correct closing brace for the constructor function
 
 function addObstacle(xPos) {
@@ -182,23 +233,31 @@ function manageObstacles() {
 
 // --- Collision Detection ---
 function checkCollisions() {
-    const beholderX = canvas.width / 3;
-    const beholderRadius = BEHOLDER_SIZE / 2;
+    const beholderX = canvas.width / 3; // Center X of beholder
+    const beholderLeft = beholderX - (BEHOLDER_SIZE / 2);
+    const beholderRight = beholderX + (BEHOLDER_SIZE / 2);
+    const beholderTop = beholderY - (BEHOLDER_SIZE / 2);
+    const beholderBottom = beholderY + (BEHOLDER_SIZE / 2);
 
-    // 1. Ground/Ceiling Collision
-    if (beholderY + beholderRadius > canvas.height || beholderY - beholderRadius < 0) {
-        return true; // Hit ground or ceiling
+    // Check collision with top/bottom boundaries
+    if (beholderTop < 0 || beholderBottom > canvas.height) {
+        console.log("Boundary Collision");
+        return true;
     }
 
-    // 2. Obstacle Collision
-    for (let i = 0; i < obstacles.length; i++) {
-        const obs = obstacles[i];
+    // Check collision with obstacles
+    for (let obs of obstacles) {
+        // Calculate the effective collision edges for the obstacle
+        // Use the narrower collision factor for horizontal check
+        let obstacleCollisionLeftEdge = obs.x + (OBSTACLE_WIDTH * (1 - OBSTACLE_COLLISION_WIDTH_FACTOR) / 2);
+        let obstacleCollisionRightEdge = obs.x + OBSTACLE_WIDTH - (OBSTACLE_WIDTH * (1 - OBSTACLE_COLLISION_WIDTH_FACTOR) / 2);
 
-        // Check if Beholder's X position overlaps with the obstacle's X span
-        if (beholderX + beholderRadius > obs.x && beholderX - beholderRadius < obs.x + OBSTACLE_WIDTH) {
-            // Check if Beholder's Y position hits the top or bottom part
-            if (beholderY - beholderRadius < obs.topHeight || beholderY + beholderRadius > obs.bottomY) {
-                return true; // Collision with an obstacle
+        // Check for horizontal overlap (using collision factor)
+        if (beholderRight > obstacleCollisionLeftEdge && beholderLeft < obstacleCollisionRightEdge) {
+            // Check for vertical overlap (collision with top or bottom part)
+            if (beholderTop < obs.topHeight || beholderBottom > obs.bottomY) {
+                 console.log("Obstacle Collision");
+                return true; // Collision detected
             }
         }
     }
@@ -283,62 +342,130 @@ function handleInput() {
      }
 }
 
-document.addEventListener('keydown', function(e) {
-    if (e.code === 'Space') {
-        // Prevent spacebar from scrolling the page
-        e.preventDefault();
-        handleInput();
-    }
-});
-
-canvas.addEventListener('mousedown', handleInput);
-canvas.addEventListener('touchstart', (e) => {
-     e.preventDefault(); // Prevent touch events from causing scrolling/zooming
-     handleInput();
-});
-
-
 // --- Game Loop ---
 function gameLoop() {
-    // Clear canvas
+    if (!ctx || !canvas) {
+        console.error("Canvas or context missing in gameLoop!");
+        return;
+    }
+
+    // 1. Clear Canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Draw Background
+    // 2. Draw Background FIRST
     drawBackground();
 
-    // Draw & Update Obstacles
-    manageObstacles();
+    // 3. Update and Draw Obstacles (Needs logic based on state)
+    // Iterate backwards to safely remove obstacles
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+        let obs = obstacles[i];
 
-    // Draw & Update Beholder
-    Beholder(); // Draws and updates position/velocity
+        // Draw obstacles in both 'start' and 'playing' states
+        if (gameState === 'start' || gameState === 'playing') {
+             obs.draw();
+        }
 
-    // Draw Score
+        // Only update position and check scoring/removal in 'playing' state
+        if (gameState === 'playing') {
+            obs.update();
+
+            // Remove obstacles that have gone off-screen
+            if (obs.x + OBSTACLE_WIDTH < 0) {
+                obstacles.splice(i, 1);
+            }
+        }
+    }
+
+     // Add new obstacles only when playing
+    if (gameState === 'playing') {
+        // Check if it's time to spawn a new obstacle based on the last one
+        if (obstacles.length === 0 || obstacles[obstacles.length - 1].x < canvas.width - OBSTACLE_SPAWN_DISTANCE) {
+             addObstacle(canvas.width);
+        }
+    }
+
+
+    // 4. Draw & Update Beholder (handles animation internally)
+    Beholder(); // Make sure Beholder() updates position based on gameState
+
+    // 5. Draw Score
     drawScore();
 
-    // Handle Game States
+    // 6. Handle Game States (Drawing overlays, checking collisions)
     if (gameState === 'playing') {
-        // Check for collisions AFTER drawing everything
-        if (checkCollisions()) {
+        if (checkCollisions()) { // checkCollisions needs to use the 'obstacles' array
             gameState = 'gameOver';
-            frameCount = 0; // Reset framecount for game over delay logic
-             // Maybe play a crash sound
+            frameCount = 0;
         }
         frameCount++;
     } else if (gameState === 'start') {
-        drawStartScreen();
-         frameCount++; // For bobbing animation
+        drawStartScreen(); // Draw overlay
+        frameCount++;
     } else if (gameState === 'gameOver') {
-        drawGameOverScreen();
-        frameCount++; // For restart delay logic
+        drawGameOverScreen(); // Draw overlay
+        frameCount++;
     }
 
-
-    // Request next frame
+    // 7. Request Next Frame
     requestAnimationFrame(gameLoop);
 }
 
-// --- Start the Game ---
-resetGame(); // Initialize variables
+function startGameIfReady() {
+    // This function checks if both conditions are met
+    if (isWindowLoaded && imagesLoaded === totalImages) {
+        // Both window and images are loaded, safe to start the game loop
+        requestAnimationFrame(gameLoop);
+    }
+}
 
-// !! DO NOT CALL gameLoop() here anymore !!
-// gameLoop(); // Remove or comment out this line
+// --- Start the Game ---
+// Initialize variables
+
+// !! REMOVE this call to resetGame() from the global scope !!
+// resetGame(); // This was line 384 - REMOVE OR COMMENT OUT
+
+// Ensure game initialization happens after the HTML document is fully loaded
+window.onload = function() {
+    console.log("Window loaded.");
+    canvas = document.getElementById('gameCanvas');
+    if (!canvas) {
+        console.error("Canvas element with ID 'gameCanvas' not found!");
+        return;
+    }
+    ctx = canvas.getContext('2d');
+    if (!ctx) {
+        console.error("Failed to get 2D rendering context.");
+        return;
+    }
+
+    // Add Event Listeners (as previously corrected)
+    document.addEventListener('keydown', function(e) {
+        if (e.code === 'Space') {
+            // Prevent spacebar from scrolling the page
+            e.preventDefault();
+            handleInput();
+        }
+    });
+
+    canvas.addEventListener('mousedown', handleInput);
+
+    canvas.addEventListener('touchstart', (e) => {
+         e.preventDefault(); // Prevent touch events from causing scrolling/zooming
+         handleInput();
+    });
+    // --- End of Added Event Listeners ---
+
+    // Call resetGame AFTER canvas is defined (this call is correct)
+    resetGame(); // Keep this call inside window.onload
+
+    // Initialize other game objects AFTER canvas is defined
+    // dragon = new Dragon(50, canvas.height / 2); // Example
+    // pipes = new Pipes(canvas); // Example
+
+    // Setup animation frames AFTER images are loaded (potentially already loaded)
+    // Or ensure setupAnimationFrames is robust enough if called before load complete
+    setupAnimationFrames();
+
+    isWindowLoaded = true;
+    startGameIfReady();
+};
