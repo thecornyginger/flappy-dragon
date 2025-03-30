@@ -3,7 +3,7 @@ body {
     justify-content: center;
     align-items: center;
     min-height: 100vh;
-    background-color: #2c1e31; /* Dark dungeon purple */
+    background-color: #000000;
     font-family: 'Press Start 2P', cursive;
     color: #e0e0e0;
     overflow: hidden; /* Prevent scrollbars */
@@ -21,11 +21,10 @@ h1 {
 }
 
 canvas {
-    border: 5px solid #4a2e4f; /* Darker purple border */
-    background-color: #1a111e; /* Very dark background for the cave */
+    border: 5px solid #4a2e4f;
+    background-color: #1a111e; 
     display: block;
     margin: 0 auto;
-    box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
 }
 
 .controls {
