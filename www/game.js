@@ -944,32 +944,14 @@ async function loadSound(url) {
     let arrayBuffer = null;
     console.log(`Attempting to load sound: ${url}`);
 
-    // ---- ADD DETAILED LOGGING ----
-    console.log(`Checking for Capacitor: ${typeof window.Capacitor !== 'undefined'}`);
-    if (typeof window.Capacitor !== 'undefined') {
-        console.log(`Checking for Capacitor.Plugins: ${typeof window.Capacitor.Plugins !== 'undefined'}`);
-        if (typeof window.Capacitor.Plugins !== 'undefined') {
-            console.log(`Checking for Capacitor.Plugins.Http: ${typeof window.Capacitor.Plugins.Http !== 'undefined'}`);
-            // Also log the Http object itself if it exists
-            if (typeof window.Capacitor.Plugins.Http !== 'undefined') {
-                 console.log('Capacitor.Plugins.Http object:', window.Capacitor.Plugins.Http);
-            }
-        }
-    }
-    // ------------------------------
-
     // Check if Capacitor's Http plugin is available
     if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Http) {
         console.log("Using Capacitor Http plugin to load sound.");
         try {
             const { Http } = window.Capacitor.Plugins;
-            // --- Convert relative path to absolute Capacitor URL --- <<< ADD THIS
-            const capacitorUrl = Capacitor.convertFileSrc(url);
-            console.log(`Converted '${url}' to Capacitor URL: ${capacitorUrl}`); // Log the converted URL
-            // --------------------------------------------------------
             const response = await Http.request({
                 method: 'GET',
-                url: capacitorUrl, // <<< USE THE CONVERTED URL
+                url: url, // Use the relative URL directly
                 responseType: 'arraybuffer' // Request raw data
             });
 
