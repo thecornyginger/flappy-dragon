@@ -677,10 +677,22 @@ window.onload = function() {
         return;
     }
 
-    // --- Dynamically Set Canvas Size --- <<< ADD
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-    console.log(`Canvas size set to: ${canvas.width}x${canvas.height}`);
+    // --- Dynamically Set Canvas Size --- <<< MODIFY
+    // Define a fixed or scaled rendering resolution
+    const renderWidth = 600; // Or perhaps window.innerWidth / 2;
+    const renderHeight = 800; // Or perhaps window.innerHeight / 2;
+    // Set the canvas drawing buffer size
+    canvas.width = renderWidth;
+    canvas.height = renderHeight;
+
+    // Use CSS to scale the canvas visually to fill the screen
+    canvas.style.width = `${window.innerWidth}px`;
+    canvas.style.height = `${window.innerHeight}px`;
+    canvas.style.display = 'block'; // Ensure it takes up the block space
+    canvas.style.objectFit = 'contain'; // Optional: Maintain aspect ratio ('cover' or 'fill' are other options)
+
+    console.log(`Canvas rendering size set to: ${canvas.width}x${canvas.height}`);
+    console.log(`Canvas CSS size set to: ${canvas.style.width}x${canvas.style.height}`);
     // ------------------------------------
 
     // Initial estimate is less critical now, but doesn't hurt
@@ -721,30 +733,26 @@ window.onload = function() {
 
     // --- Optional: Add Resize Listener ---
     window.addEventListener('resize', () => {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-        console.log(`Canvas resized to: ${canvas.width}x${canvas.height}`);
+        // Update CSS size on resize
+        canvas.style.width = `${window.innerWidth}px`;
+        canvas.style.height = `${window.innerHeight}px`;
 
-        // IMPORTANT: Reset the game to recalculate all positions and sizes
-        resetGame();
+        // Option 1: Reset the game (simpler, recalculates based on fixed render size)
+        console.log(`Window resized. CSS size updated. Resetting game with render size ${canvas.width}x${canvas.height}`);
+        resetGame(); // This will use the fixed canvas.width/height
 
-        // // Alternative: More complex resize handling without full reset
-        // // Recalculate dynamic constants
-        // beholderSize = canvas.height * BEHOLDER_SIZE_FACTOR;
-        // obstacleWidth = canvas.height * OBSTACLE_WIDTH_FACTOR;
-        // obstacleGap = canvas.height * OBSTACLE_GAP_FACTOR;
-        // obstacleSpeed = canvas.width * OBSTACLE_SPEED_FACTOR;
-        // obstacleSpawnDistance = canvas.width * OBSTACLE_SPAWN_DISTANCE_FACTOR;
-        // // Recalculate ground Y
-        // if (groundImg.complete && groundImg.naturalHeight !== 0) { groundY = canvas.height - groundImg.naturalHeight; } else { groundY = canvas.height * (1 - OBSTACLE_VERTICAL_MARGIN_FACTOR); }
-        // // Reposition beholder?
-        // beholderX = canvas.width / 3;
-        // // Adjust existing obstacle positions/sizes? (Complex!)
-        // // Redraw immediately based on current state
-        // drawBackground();
-        // if (gameState === 'start') drawStartScreen();
-        // else if (gameState === 'playing') { /* Draw playing state */ }
-        // else if (gameState === 'gameOver') drawGameOverScreen();
+        // Option 2: Keep fixed render size, maybe adjust layout if needed?
+        // If resetGame() isn't desired on resize, you might only need to redraw
+        // draw(); // You'd need a main draw function if you separate update/draw logic
+
+        // Option 3: Change render resolution on resize (more complex)
+        // const newRenderWidth = window.innerWidth / 2;
+        // const newRenderHeight = window.innerHeight / 2;
+        // canvas.width = newRenderWidth;
+        // canvas.height = newRenderHeight;
+        // console.log(`Canvas resized & render resolution changed to: ${canvas.width}x${canvas.height}`);
+        // resetGame(); // Reset needed because render size changed
+
     });
     // ----------------------------------
 };
