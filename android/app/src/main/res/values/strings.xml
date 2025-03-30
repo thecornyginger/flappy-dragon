@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">Flappy Dragon</string>
-    <string name="title_activity_main">Flappy Dragon</string>
-    <string name="package_name">moc.erehtuonaad.flappydragon</string>
-    <string name="custom_url_scheme">moc.erehtuonaad.flappydragon</string>
-</resources>
