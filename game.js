@@ -4,15 +4,15 @@ let ctx;
 let isWindowLoaded = false; // <-- Add this flag
 
 // --- Game Constants ---
-const GRAVITY = 900;  // Pixels per second per second (adjust significantly upwards)
-const LIFT = -300;     // Pixels per second (instantaneous velocity change, adjust magnitude)
+const GRAVITY = 800;  // Pixels per second per second (adjust significantly upwards)
+const LIFT = -250;     // Pixels per second (instantaneous velocity change, adjust magnitude)
 const BEHOLDER_SIZE = 50;
 const OBSTACLE_WIDTH = 60;
 const OBSTACLE_COLLISION_WIDTH_FACTOR = 0.6; // Keep this from previous step
 const OBSTACLE_GAP = 150;
-const OBSTACLE_SPEED = 100; // Pixels per second (adjust)
+const OBSTACLE_SPEED = 125; // Pixels per second (adjust)
 const OBSTACLE_SPAWN_DISTANCE = 200;
-const ANIMATION_THROTTLE = 5; // Keep animation frame-based for now, or adjust later
+const ANIMATION_THROTTLE = 20; // Keep animation frame-based for now, or adjust later
 
 // --- Image Loading Management ---
 let imagesLoaded = 0;
@@ -99,20 +99,22 @@ function spawnInitialObstacles() {
 
 // --- Game Objects ---
 function Beholder(deltaTime) {
-    // Apply gravity (acceleration = pixels/sec^2)
-    velocityY += GRAVITY * deltaTime; // Gravity effect over time
-    // Apply velocity (position change = pixels/sec * sec)
-    beholderY += velocityY * deltaTime; // Position update over time
+    // --- Apply Physics ONLY when playing ---
+    if (gameState === 'playing') {
+        // Apply gravity (acceleration = pixels/sec^2)
+        velocityY += GRAVITY * deltaTime; // Gravity effect over time
+        // Apply velocity (position change = pixels/sec * sec)
+        beholderY += velocityY * deltaTime; // Position update over time
+    }
 
     // --- Update Animation Frame ---
-    // (Keep this animation logic exactly as it is)
-    if (gameState === 'playing' || gameState === 'start') {
+    // (Keep animation running in start/playing for visual feedback)
+    if (gameState === 'playing' || gameState === 'start' || gameState === 'gameOver') { // Animate in game over too
         if (frameCount % ANIMATION_THROTTLE === 0) {
             animationFrameIndex = (animationFrameIndex + 1) % beholderFrames.length;
         }
     }
     let currentFrameImg = beholderFrames[animationFrameIndex] || beholderImg;
-
 
     // --- Drawing (REVISED LOGIC) ---
     let imageToDraw = null; // Start assuming no image can be drawn yet
