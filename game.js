@@ -22,6 +22,10 @@ const MAX_OBSTACLE_GAP_FACTOR = 0.35; // Example: Maximum gap as factor of heigh
 const MIN_SPAWN_DISTANCE_FACTOR = 0.4; // Example: Minimum distance as factor of width
 const MAX_SPAWN_DISTANCE_FACTOR = 0.7; // Example: Maximum distance as factor of width
 
+// Define your desired internal rendering resolution
+const RENDER_WIDTH = 600; // Or 960, 1024 - find a balance
+const RENDER_HEIGHT = 800; // Or 720, 768 - maintain aspect ratio if needed
+
 // --- Image Loading Management ---
 let imagesLoaded = 0;
 const totalImages = 7; // <<< INCREMENT totalImages (Beholder x3, Obstacles x2, Background, Ground)
@@ -305,32 +309,23 @@ class Obstacle {
         if (!this.active) return;
         this.x -= obstacleSpeed * deltaTime;
 
-        // Scoring check
         if (!this.passed && this.x + this.width < beholderX) {
             score++;
-            if (score > highScore) {
-                highScore = score;
-                // localStorage.setItem('flappyDragonHighScore', highScore);
-            }
+            if (score > highScore) highScore = score;
             this.passed = true;
 
-            // Dynamically adjust next obstacle's properties
+            // Adjust next obstacle props
             obstacleGap = canvas.height * (Math.random() * (MAX_OBSTACLE_GAP_FACTOR - MIN_OBSTACLE_GAP_FACTOR) + MIN_OBSTACLE_GAP_FACTOR);
             obstacleSpawnDistance = canvas.width * (Math.random() * (MAX_SPAWN_DISTANCE_FACTOR - MIN_SPAWN_DISTANCE_FACTOR) + MIN_SPAWN_DISTANCE_FACTOR);
 
-            updateScoreDisplay();
+            updateScoreDisplay(); // Defined elsewhere
 
-            // --- Play Score Sound (Allow Overlap) --- <<< MODIFY
-            // Create a new Audio object each time to allow overlap
-            const soundToPlay = new Audio('sounds/point.wav'); // Use the correct path
-            // Optional: Set volume if needed
-            // soundToPlay.volume = 0.5; // Example: Set volume to 50%
-
-            console.log("Playing new instance of coin sound..."); // Debug log
-
-            soundToPlay.play().catch(e => {
-                console.error("Error playing dynamic coin sound instance:", e);
-            });
+            // --- Play Score Sound using Web Audio --- <<< MODIFY
+            if (coinSoundBuffer) { // Check if the buffer was loaded successfully
+                 playSoundFromBuffer(coinSoundBuffer);
+            } else {
+                // console.warn("Coin sound buffer not loaded, cannot play sound.");
+            }
             // ----------------------------------------
         }
     }
@@ -751,8 +746,10 @@ function startGameIfReady() {
 // resetGame(); // This was line 384 - REMOVE OR COMMENT OUT
 
 // Ensure game initialization happens after the HTML document is fully loaded
-window.onload = function() {
-    console.log("Window loaded. Checking obstaclePool:", typeof obstaclePool); // <<< ADD DEBUG LOG
+window.onload = async function() { // Make onload async to await sound loading
+    console.log("Window loaded. Checking obstaclePool:", typeof obstaclePool);
+    isWindowLoaded = true; // Set your flag
+
     canvas = document.getElementById('gameCanvas');
     if (!canvas) {
         console.error("Canvas element with ID 'gameCanvas' not found!");
@@ -764,29 +761,29 @@ window.onload = function() {
         return;
     }
 
-    // --- Dynamically Set Canvas Size --- <<< MODIFY
-    // Define a fixed or scaled rendering resolution
-    const renderWidth = 600; // Or perhaps window.innerWidth / 2;
-    const renderHeight = 800; // Or perhaps window.innerHeight / 2;
-    // Set the canvas drawing buffer size
-    canvas.width = renderWidth;
-    canvas.height = renderHeight;
+    // --- Set Render vs Display Size --- <<< APPLY THIS CHANGE
+    // Set the actual drawing buffer size (internal resolution)
+    canvas.width = RENDER_WIDTH;
+    canvas.height = RENDER_HEIGHT;
 
-    // Use CSS to scale the canvas visually to fill the screen
-    canvas.style.width = `${window.innerWidth}px`;
-    canvas.style.height = `${window.innerHeight}px`;
-    canvas.style.display = 'block'; // Ensure it takes up the block space
-    canvas.style.objectFit = 'contain'; // Optional: Maintain aspect ratio ('cover' or 'fill' are other options)
+    // Set the CSS size to scale the canvas visually to fill the screen
+    function resizeCanvas() {
+        canvas.style.width = `${window.innerWidth}px`;
+        canvas.style.height = `${window.innerHeight}px`;
+        canvas.style.display = 'block';
+        canvas.style.objectFit = 'contain'; // Or 'cover', 'fill'
+        console.log(`Canvas render size: ${canvas.width}x${canvas.height}, CSS size: ${canvas.style.width}x${canvas.style.height}`);
 
-    console.log(`Canvas rendering size set to: ${canvas.width}x${canvas.height}`);
-    console.log(`Canvas CSS size set to: ${canvas.style.width}x${canvas.style.height}`);
-    // ------------------------------------
+        // IMPORTANT: Recalculate dynamic sizes based on RENDER resolution
+        // and reset game elements after resizing. Your resetGame likely
+        // already uses canvas.width/height, which now refer to RENDER_WIDTH/HEIGHT.
+        // resetGame(); // Call reset *after* setting sizes
+    }
 
-    // Initial estimate is less critical now, but doesn't hurt
-    // You might need to recalculate groundY based on the new canvas.height
-    // groundY = canvas.height - GROUND_HEIGHT; // Revisit this calculation
+    resizeCanvas(); // Call once initially
+    // ---------------------------------
 
-    // <<< ADD Load High Score >>>
+    // --- Load High Score ---
     highScore = parseInt(localStorage.getItem('flappyDragonHighScore')) || 0;
     console.log("Loaded High Score:", highScore);
     // <<< -------------------- >>>
@@ -815,31 +812,27 @@ window.onload = function() {
     // Initialize other game objects AFTER canvas is defined
     setupAnimationFrames();
 
-    isWindowLoaded = true;
+    // --- Initialize Audio and Load Sounds ---
+    // IMPORTANT: Call initAudioContext() after first user interaction (e.g., clicking "start game")
+    // For now, we'll call it here, but it might require a user gesture first in some browsers.
+    initAudioContext();
+
+    // Load sounds asynchronously
+    coinSoundBuffer = await loadSound('sounds/point.wav'); // <<< LOAD THE SOUND
+    // Load other sounds (wing, hit) similarly if needed for Web Audio API
+    // wingSoundBuffer = await loadSound('sounds/wing.wav');
+    // hitSoundBuffer = await loadSound('sounds/hit.wav');
+
     startGameIfReady(); // Make sure this recalculates necessary positions based on new size
 
-    // --- Optional: Add Resize Listener ---
+    // --- Resize Listener ---
     window.addEventListener('resize', () => {
-        // Update CSS size on resize
-        canvas.style.width = `${window.innerWidth}px`;
-        canvas.style.height = `${window.innerHeight}px`;
-
-        // Option 1: Reset the game (simpler, recalculates based on fixed render size)
-        console.log(`Window resized. CSS size updated. Resetting game with render size ${canvas.width}x${canvas.height}`);
-        resetGame(); // This will use the fixed canvas.width/height
-
-        // Option 2: Keep fixed render size, maybe adjust layout if needed?
-        // If resetGame() isn't desired on resize, you might only need to redraw
-        // draw(); // You'd need a main draw function if you separate update/draw logic
-
-        // Option 3: Change render resolution on resize (more complex)
-        // const newRenderWidth = window.innerWidth / 2;
-        // const newRenderHeight = window.innerHeight / 2;
-        // canvas.width = newRenderWidth;
-        // canvas.height = newRenderHeight;
-        // console.log(`Canvas resized & render resolution changed to: ${canvas.width}x${canvas.height}`);
-        // resetGame(); // Reset needed because render size changed
-
+        console.log("Window resize detected.");
+        resizeCanvas(); // Update CSS size
+        // You MUST recalculate layout/positions based on the new render size if RENDER_WIDTH/HEIGHT were dynamic
+        // OR simply reset the game which recalculates based on the fixed RENDER_WIDTH/HEIGHT
+        console.log("Calling resetGame due to resize.");
+        resetGame(); // Reset game state to adapt to potential aspect ratio changes etc.
     });
     // ----------------------------------
 };
@@ -901,3 +894,103 @@ function updateScoreDisplay() {
 
     // Option C: If you had a dedicated HTML element for score, you'd update its text content here.
 }
+
+// --- Web Audio API Setup ---
+let audioContext; // The main context for Web Audio
+let coinSoundBuffer = null; // To store the decoded audio data
+
+// Function to initialize AudioContext (call after user interaction)
+function initAudioContext() {
+    try {
+        // Check if context is already created or if the class exists
+        window.AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!audioContext && window.AudioContext) {
+            audioContext = new AudioContext();
+            console.log("AudioContext created successfully.");
+            // Resume context if it was suspended (common in Chrome)
+            if (audioContext.state === 'suspended') {
+                audioContext.resume().then(() => {
+                    console.log("AudioContext resumed successfully.");
+                });
+            }
+        } else if (audioContext && audioContext.state === 'suspended') {
+             audioContext.resume().then(() => {
+                console.log("AudioContext resumed successfully.");
+            });
+        }
+    } catch (e) {
+        console.error("Web Audio API is not supported in this browser", e);
+        alert("Web Audio API is not supported in this browser");
+    }
+}
+
+// Function to load and decode a sound file
+async function loadSound(url) {
+    if (!audioContext) {
+        console.error("AudioContext not initialized. Cannot load sound:", url);
+        return null; // Return null or throw error if context is missing
+    }
+    console.log(`Attempting to load sound: ${url}`);
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status} for ${url}`);
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        // Use Promise-based decodeAudioData if available
+        if (audioContext.decodeAudioData.length === 1) { // Modern Promise-based syntax
+             const decodedData = await audioContext.decodeAudioData(arrayBuffer);
+             console.log(`Sound loaded and decoded successfully: ${url}`);
+             return decodedData;
+        } else { // Fallback for older callback syntax (less common now)
+            return new Promise((resolve, reject) => {
+                 audioContext.decodeAudioData(arrayBuffer, resolve, reject);
+             }).then(decodedData => {
+                console.log(`Sound loaded and decoded successfully (callback): ${url}`);
+                return decodedData;
+             });
+        }
+
+    } catch (error) {
+        console.error(`Error loading or decoding sound ${url}:`, error);
+        return null; // Indicate failure
+    }
+}
+
+// Function to play a sound from a buffer
+function playSoundFromBuffer(buffer) {
+    // Check if context/buffer is ready and context is running
+    if (!audioContext || audioContext.state !== 'running' || !buffer) {
+        // console.warn("Cannot play sound: AudioContext not running or buffer missing.");
+        // If suspended, try resuming (often needs user gesture)
+        if (audioContext && audioContext.state === 'suspended') {
+            console.log("AudioContext suspended, attempting resume to play sound...");
+             audioContext.resume().then(() => {
+                 if(audioContext.state === 'running') playSoundFromBuffer(buffer); // Retry if resumed
+             });
+        }
+        return; // Don't proceed if not ready
+    }
+
+    const sourceNode = audioContext.createBufferSource(); // Create a sound source
+    sourceNode.buffer = buffer;                         // Point it to our buffer
+    sourceNode.connect(audioContext.destination);       // Connect it to the speakers
+    sourceNode.start(0);                                // Play immediately (0 = now)
+    // console.log("Playing sound from buffer."); // Optional log
+}
+// --------------------------
+
+// --- Add User Interaction Listener to Ensure AudioContext Starts ---
+// Example: Start on first click/touch/keypress
+function handleFirstInteraction() {
+    console.log("First user interaction detected.");
+    initAudioContext(); // Ensure context is created/resumed
+    // Remove this listener after first use
+    window.removeEventListener('click', handleFirstInteraction);
+    window.removeEventListener('touchstart', handleFirstInteraction);
+    window.removeEventListener('keydown', handleFirstInteraction);
+}
+window.addEventListener('click', handleFirstInteraction, { once: true });
+window.addEventListener('touchstart', handleFirstInteraction, { once: true });
+window.addEventListener('keydown', handleFirstInteraction, { once: true });
+// --------------------------------------------------------------------
