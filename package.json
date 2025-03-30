@@ -1,0 +1,29 @@
+{
+  "name": "flappy-dragon",
+  "version": "1.0.0",
+  "main": "game.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thecornyginger/flappy-dragon.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/thecornyginger/flappy-dragon/issues"
+  },
+  "homepage": "https://github.com/thecornyginger/flappy-dragon#readme",
+  "description": "",
+  "devDependencies": {
+    "@capacitor/cli": "^7.1.0"
+  },
+  "dependencies": {
+    "@capacitor-community/http": "^1.4.1",
+    "@capacitor/android": "^7.1.0",
+    "@capacitor/core": "^7.1.0",
+    "@capacitor/ios": "^7.1.0"
+  }
+}
