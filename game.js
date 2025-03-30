@@ -761,27 +761,28 @@ window.onload = async function() { // Make onload async to await sound loading
         return;
     }
 
-    // --- Set Render vs Display Size --- <<< APPLY THIS CHANGE
-    // Set the actual drawing buffer size (internal resolution)
+    // Set the internal rendering resolution
     canvas.width = RENDER_WIDTH;
     canvas.height = RENDER_HEIGHT;
 
-    // Set the CSS size to scale the canvas visually to fill the screen
+    // Function to set the display size and scaling
     function resizeCanvas() {
+        // Set CSS size to fill the window
         canvas.style.width = `${window.innerWidth}px`;
         canvas.style.height = `${window.innerHeight}px`;
         canvas.style.display = 'block';
-        canvas.style.objectFit = 'contain'; // Or 'cover', 'fill'
-        console.log(`Canvas render size: ${canvas.width}x${canvas.height}, CSS size: ${canvas.style.width}x${canvas.style.height}`);
 
-        // IMPORTANT: Recalculate dynamic sizes based on RENDER resolution
-        // and reset game elements after resizing. Your resetGame likely
-        // already uses canvas.width/height, which now refer to RENDER_WIDTH/HEIGHT.
-        // resetGame(); // Call reset *after* setting sizes
+        // --- Control Aspect Ratio Scaling ---
+        // 'contain': Fits the whole game within the screen, potentially adding black bars (letterboxing).
+        // 'cover':   Fills the entire screen, potentially cropping parts of the game if aspect ratios differ.
+        // 'fill':    Stretches to fill, ignoring aspect ratio (usually looks bad).
+        canvas.style.objectFit = 'cover';
+        // ------------------------------------
+
+        console.log(`Canvas render size: ${canvas.width}x${canvas.height}, CSS size: ${canvas.style.width}x${canvas.style.height}`);
     }
 
-    resizeCanvas(); // Call once initially
-    // ---------------------------------
+    resizeCanvas(); // Initial call
 
     // --- Load High Score ---
     highScore = parseInt(localStorage.getItem('flappyDragonHighScore')) || 0;
@@ -844,34 +845,17 @@ window.onload = async function() { // Make onload async to await sound loading
 
 // --- Example: In your game start or first interaction handler ---
 function handleFirstInteraction() {
-    if (audioContext && audioContext.state === 'suspended' && !isAudioContextResumed) {
-        audioContext.resume().then(() => {
-            console.log("AudioContext resumed successfully.");
-            isAudioContextResumed = true;
-            // Potentially play a short, silent sound here to ensure it's fully 'awake'
-        }).catch(e => console.error("Error resuming AudioContext:", e));
-    }
-    // ... other interaction logic (e.g., flap, startGame) ...
+    console.log("First user interaction detected.");
+    initAudioContext(); // Ensure context is created/resumed
+    // Remove this listener after first use
+    window.removeEventListener('click', handleFirstInteraction);
+    window.removeEventListener('touchstart', handleFirstInteraction);
+    window.removeEventListener('keydown', handleFirstInteraction);
 }
-
-// Add this handler to your initial interaction listener
-// E.g., canvas.addEventListener('click', handleFirstInteraction, { once: true });
-// E.g., document.addEventListener('keydown', handleFirstInteraction, { once: true }); // if spacebar starts
-
-// --- Scoring Display ---
-// Assume you have a drawScore function defined elsewhere like this:
-/*
-function drawScore() {
-    if (!ctx) return;
-    ctx.fillStyle = 'white';
-    ctx.font = '30px "Press Start 2P"';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText(`Score: ${score}`, 20, 20);
-    // Potentially draw high score too
-    ctx.fillText(`High: ${highScore}`, 20, 60);
-}
-*/
+window.addEventListener('click', handleFirstInteraction, { once: true });
+window.addEventListener('touchstart', handleFirstInteraction, { once: true });
+window.addEventListener('keydown', handleFirstInteraction, { once: true });
+// --------------------------------------------------------------------
 
 // <<< ADD THIS FUNCTION DEFINITION >>>
 // Simple function to trigger the score redraw immediately when called

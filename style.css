@@ -1,20 +1,20 @@
 html, body {
     margin: 0;
     padding: 0;
-    width: 100%;
-    height: 100%;
-    display: flex;
+    width: 100%;  /* Fill width */
+    height: 100%; /* Fill height */
+    display: flex; /* Use flex for centering container */
     justify-content: center;
     align-items: center;
     background-color: #000000;
     font-family: 'Press Start 2P', cursive;
     color: #e0e0e0;
-    overflow: hidden; /* Prevent scrollbars */
+    overflow: hidden; /* IMPORTANT: Prevent scrollbars */
 }
 
 .container {
-    width: 100%;
-    height: 100%;
+    width: 100%;  /* Container fills body */
+    height: 100%; /* Container fills body */
     display: flex;
     justify-content: center;
     align-items: center;
@@ -28,10 +28,9 @@ h1 {
 }
 
 canvas {
-    display: block;
-    width: 100vw;
-    height: 100vh;
-    object-fit: contain;
+    display: block; /* Prevents extra space below canvas */
+    /* Width and Height styles are set by JavaScript */
+    /* object-fit is also set by JavaScript */
 }
 
 .controls {
