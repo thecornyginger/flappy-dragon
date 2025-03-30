@@ -4,20 +4,22 @@ let ctx;
 let isWindowLoaded = false; // <-- Add this flag
 
 // --- Game Constants ---
-const GRAVITY = 800;  // Pixels per second per second (adjust significantly upwards)
-const LIFT = -250;     // Pixels per second (instantaneous velocity change, adjust magnitude)
+const GRAVITY = 1500;  // Pixels per second per second (adjust significantly upwards)
+const LIFT = -350;     // Pixels per second (instantaneous velocity change, adjust magnitude)
 const BEHOLDER_SIZE = 50;
 const OBSTACLE_WIDTH = 60;
 const OBSTACLE_COLLISION_WIDTH_FACTOR = 0.6; // Keep this from previous step
-const OBSTACLE_GAP = 150;
+const OBSTACLE_GAP = 180;
 const OBSTACLE_SPEED = 125; // Pixels per second (adjust)
 const OBSTACLE_SPAWN_DISTANCE = 200;
 const ANIMATION_THROTTLE = 20; // Keep animation frame-based for now, or adjust later
+const MAX_UP_ROTATION_DEG = -15; // Max upward tilt in degrees (negative for up)
+const MAX_DOWN_ROTATION_DEG = 80;  // Max downward tilt in degrees
+const ROTATION_VELOCITY_SCALE = 600; // Lower value = more sensitive rotation to velocity changes (tune this!)
 
 // --- Image Loading Management ---
 let imagesLoaded = 0;
-// !! IMPORTANT: Update totalImages to 6 !!
-const totalImages = 6; // Beholder(mid), DownFlap, UpFlap, Stalactite, Stalagmite, Background
+const totalImages = 7; // <<< INCREMENT totalImages (Beholder x3, Obstacles x2, Background, Ground)
 let allImagesLoaded = false;
 
 function imageLoaded() {
@@ -28,65 +30,78 @@ function imageLoaded() {
 }
 
 // --- Game Variables ---
-let beholderY;
-let beholderVelY;
-let score;
-let obstacles;
-let frameCount;
-let gameState;
-let animationFrameIndex = 0; // Start at the first frame (down-flap)
-let beholderFrames = []; // Array to hold the animation image objects
-let lastTime = 0; // <<< ADD: Timestamp of the last frame
-let velocityY = 0; // <<< ADD: Velocity for Beholder
+let beholderX, beholderY, velocityY;
+let obstacles = [];
+let score = 0;
+let frameCount = 0; // Used for animation throttling
+let gameState = 'start'; // 'start', 'playing', 'gameOver'
+let animationFrameIndex = 0; // Index for beholder animation frames
+let groundX = 0; // <<< ADD: X position of the scrolling ground
+let groundY = 0; // <<< ADD: Y position of the ground (calculated later)
+const GROUND_HEIGHT = 50; // <<< ADD: Adjust based on your base.png height if needed
 
-// --- Asset Loading ---
-let beholderImg = new Image();         // Mid-flap (original)
-let beholderDownFlapImg = new Image(); // Down-flap
-let beholderUpFlapImg = new Image();   // Up-flap
-let stalactiteImg = new Image();
-let stalagmiteImg = new Image();
-let backgroundImg = new Image();
+// --- Load Images ---
+const beholderImg = new Image();
+const beholderDownFlapImg = new Image();
+const beholderUpFlapImg = new Image();
+const stalactiteImg = new Image(); // Top obstacle
+const stalagmiteImg = new Image(); // Bottom obstacle image
+const backgroundImg = new Image();
+const groundImg = new Image(); // Ground image object
 
-// Set the source paths
-beholderImg.src = 'images/beholder.png';             // Mid-flap
-beholderDownFlapImg.src = 'images/beholder-downflap.png'; // Down-flap image file
-beholderUpFlapImg.src = 'images/beholder-upflap.png';   // Up-flap image file
+// --- Load Sounds ---
+const wingSound = new Audio('sounds/wing.wav'); // Replace with your actual file path
+const coinSound = new Audio('sounds/point.wav'); // Replace with your actual file path
+const punchSound = new Audio('sounds/hit.wav'); // Replace with your actual file path
+const dieSound = new Audio('sounds/die.wav'); // <<< ADD Die sound object
+// Preload suggestion (optional, helps ensure sounds are ready)
+// wingSound.load();
+// coinSound.load();
+// punchSound.load();
+
+// --- Animation Frames Array ---
+let beholderFrames = []; // Initialize
+
+function setupAnimationFrames() {
+    // Ensure this runs AFTER images might be loaded or ensure images exist
+    if (beholderDownFlapImg.complete && beholderImg.complete && beholderUpFlapImg.complete) {
+         beholderFrames = [beholderDownFlapImg, beholderImg, beholderUpFlapImg, beholderImg];
+    } else {
+        console.warn("Attempted to setup animation frames before all beholder images loaded.");
+         beholderFrames = [beholderImg, beholderImg, beholderImg, beholderImg]; // Fallback
+    }
+}
+
+// --- Assign onload handlers FIRST ---
+beholderImg.onload = imageLoaded;
+beholderDownFlapImg.onload = imageLoaded;
+beholderUpFlapImg.onload = imageLoaded;
+stalactiteImg.onload = imageLoaded;
+stalagmiteImg.onload = imageLoaded;
+backgroundImg.onload = imageLoaded;
+groundImg.onload = imageLoaded;
+
+// --- Assign sources AFTER defining onload ---
+beholderImg.src = 'images/dragon-flapmid.png';
+beholderDownFlapImg.src = 'images/dragon-flapdown.png';
+beholderUpFlapImg.src = 'images/dragon-flapup.png';
 stalactiteImg.src = 'images/stalactite.png';
 stalagmiteImg.src = 'images/stalagmite.png';
 backgroundImg.src = 'images/background.png';
-
-// Assign onload handlers
-beholderImg.onload = imageLoaded;
-beholderDownFlapImg.onload = imageLoaded; // Add onload for new image
-beholderUpFlapImg.onload = imageLoaded;   // Add onload for new image
-stalactiteImg.onload = imageLoaded;
-stalagmiteImg.src = 'images/stalagmite.png';
-stalagmiteImg.onload = imageLoaded;
-backgroundImg.onload = imageLoaded;
-
-// --- Helper function to set up the animation array ---
-// (Call this after images are potentially loaded)
-function setupAnimationFrames() {
-    beholderFrames = [
-        beholderDownFlapImg, // Frame 0
-        beholderImg,         // Frame 1 (Mid)
-        beholderUpFlapImg    // Frame 2
-    ];
-    // Optional: You could add the mid-flap again to make the cycle smoother
-    // beholderFrames = [beholderDownFlapImg, beholderImg, beholderUpFlapImg, beholderImg];
-    // If you do this, make sure the modulo logic (%) later uses the correct array length.
-}
+groundImg.src = 'images/base.png';
 
 // --- Game Initialization ---
 function resetGame() {
     beholderY = canvas.height / 2;
-    velocityY = 0; // <<< ENSURE velocity is reset
-    score = 0;
+    velocityY = 0;
     obstacles = [];
-    frameCount = 0;
+    score = 0;
     gameState = 'start';
-    animationFrameIndex = 0; // Reset animation frame on game reset
-    spawnInitialObstacles();
+    frameCount = 0;
+    animationFrameIndex = 0; // Reset animation index
+    groundX = 0; // Reset ground scroll position
+    // Calculate initial groundY based on constant or potentially loaded image if available NOW
+    groundY = (groundImg.complete && groundImg.naturalHeight !== 0) ? canvas.height - groundImg.naturalHeight : canvas.height - GROUND_HEIGHT;
     console.log("Game Reset");
 }
 
@@ -97,105 +112,150 @@ function spawnInitialObstacles() {
     addObstacle(canvas.width + 100 + 2 * OBSTACLE_SPAWN_DISTANCE);
 }
 
+// --- Helper Function ---
+function degToRad(degrees) {
+    return degrees * (Math.PI / 180);
+}
+
+// <<< ADD THIS HELPER FUNCTION >>>
+function playSound(sound) {
+    // Reset playback to the beginning to allow rapid replays
+    sound.currentTime = 0;
+    // Play the sound
+    sound.play().catch(error => {
+        // Autoplay policies might prevent sound initially until user interaction
+        console.warn("Sound play failed (likely requires user interaction first):", error);
+    });
+}
+
 // --- Game Objects ---
 function Beholder(deltaTime) {
-    // --- Apply Physics ONLY when playing ---
-    if (gameState === 'playing') {
+    // --- Apply Physics when playing OR game over ---
+    if (gameState === 'playing' || gameState === 'gameOver') {
         // Apply gravity (acceleration = pixels/sec^2)
         velocityY += GRAVITY * deltaTime; // Gravity effect over time
         // Apply velocity (position change = pixels/sec * sec)
         beholderY += velocityY * deltaTime; // Position update over time
+
+        // --- Stop at ground (groundY) ONLY when game is over ---
+        if (gameState === 'gameOver' && beholderY >= groundY - BEHOLDER_SIZE / 2) {
+            beholderY = groundY - BEHOLDER_SIZE / 2; // Pin to TOP of ground image
+            velocityY = 0; // Stop further falling
+        }
     }
 
-    // --- Update Animation Frame ---
-    // (Keep animation running in start/playing for visual feedback)
-    if (gameState === 'playing' || gameState === 'start' || gameState === 'gameOver') { // Animate in game over too
+    // --- Update Animation Frame ONLY when NOT game over ---
+    if (gameState === 'start' || gameState === 'playing') {
+        // Only advance frame if animating
         if (frameCount % ANIMATION_THROTTLE === 0) {
             animationFrameIndex = (animationFrameIndex + 1) % beholderFrames.length;
         }
     }
-    let currentFrameImg = beholderFrames[animationFrameIndex] || beholderImg;
 
-    // --- Drawing (REVISED LOGIC) ---
-    let imageToDraw = null; // Start assuming no image can be drawn yet
+    // --- Calculate Rotation Angle (allow during gameOver too) ---
+    let rotationAngle = 0; // Default to no rotation if not playing/game over
+    if (gameState === 'playing' || gameState === 'gameOver') { // <<< ENSURE this condition includes gameOver
+        const maxUpRad = degToRad(MAX_UP_ROTATION_DEG);
+        const maxDownRad = degToRad(MAX_DOWN_ROTATION_DEG);
+        let targetAngle = (velocityY / ROTATION_VELOCITY_SCALE) * maxDownRad;
+        rotationAngle = Math.max(maxUpRad, Math.min(targetAngle, maxDownRad));
 
-    // Prioritize drawing the current animation frame if it's ready
-    if (currentFrameImg && currentFrameImg.complete && currentFrameImg.naturalHeight !== 0) {
-        imageToDraw = currentFrameImg;
+        // --- Pin rotation when on ground (groundY) during game over ---
+        if (gameState === 'gameOver' && beholderY >= groundY - BEHOLDER_SIZE / 2) {
+             rotationAngle = maxDownRad; // Force max down rotation when grounded
+        }
     }
-    // If the animation frame isn't ready, try the fallback (mid-flap) image
-    else if (beholderImg && beholderImg.complete && beholderImg.naturalHeight !== 0) {
+
+    // --- Determine Image to Draw ---
+    let imageToDraw = null;
+
+    // --- Select image based on state ---
+    if (gameState === 'gameOver') {
+        // Force the middle flap image when game is over
         imageToDraw = beholderImg;
+    } else {
+        // Otherwise, use the current animation frame
+        let currentFrameImg = beholderFrames[animationFrameIndex] || beholderImg; // Use fallback just in case
+         if (currentFrameImg && currentFrameImg.complete && currentFrameImg.naturalHeight !== 0) {
+            imageToDraw = currentFrameImg;
+        } else if (beholderImg && beholderImg.complete && beholderImg.naturalHeight !== 0) {
+             imageToDraw = beholderImg; // Double fallback
+         }
     }
 
-    // Now, ONLY if we selected a valid image, draw it.
-    if (imageToDraw) {
-        // ctx should definitely be defined globally here
+    // --- Drawing with Rotation ---
+    if (imageToDraw && imageToDraw.complete && imageToDraw.naturalHeight !== 0) { // Check again before drawing
+        const centerX = canvas.width / 3;
+        const centerY = beholderY;
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.rotate(rotationAngle);
         ctx.drawImage(
-            imageToDraw,
-            canvas.width / 3 - BEHOLDER_SIZE / 2, // Centered X
-            beholderY - BEHOLDER_SIZE / 2,       // Centered Y
-            BEHOLDER_SIZE,                       // Width
-            BEHOLDER_SIZE                        // Height
+            imageToDraw, // Use the selected image
+            -BEHOLDER_SIZE / 2,
+            -BEHOLDER_SIZE / 2,
+            BEHOLDER_SIZE,
+            BEHOLDER_SIZE
         );
+        ctx.restore();
     }
-    // If neither image is ready, nothing is drawn (better than an error)
 }
 
-function Obstacle(x, gapY) {
-    // --- Properties (Must be inside the constructor) ---
+function Obstacle(x, gapTopY) {
     this.x = x;
-    this.gapY = gapY; // Center Y position of the gap
+    this.topHeight = gapTopY;
+    this.bottomY = this.topHeight + OBSTACLE_GAP;
+    this.bottomHeight = Math.max(0, groundY - this.bottomY);
     this.scored = false;
 
-    // Calculate top (stalactite) and bottom (stalagmite) positions
-    this.topHeight = this.gapY - OBSTACLE_GAP / 2;
-    this.bottomY = this.gapY + OBSTACLE_GAP / 2;
-    this.bottomHeight = canvas.height - this.bottomY;
-
-    // --- Methods (Must be inside the constructor) ---
     this.draw = function() {
-        /* // Placeholder comments can remain or be removed
-        ctx.fillStyle = '#6b4d3a';
-        ctx.fillRect(this.x, 0, OBSTACLE_WIDTH, this.topHeight);
-        ctx.fillRect(this.x, this.bottomY, OBSTACLE_WIDTH, this.bottomHeight);
-        */
-
-        // Draw Obstacle Images
-        // Make sure stalactiteImg and stalagmiteImg are loaded correctly
+        // Draw top obstacle (Stalactite)
         if (stalactiteImg.complete && stalactiteImg.naturalHeight !== 0) {
-             ctx.drawImage(stalactiteImg, this.x, 0, OBSTACLE_WIDTH, this.topHeight);
+            ctx.drawImage(stalactiteImg, this.x, 0, OBSTACLE_WIDTH, this.topHeight);
         }
+
+        // Draw bottom obstacle (Stalagmite) - starts at bottomY, height fills to groundY
         if (stalagmiteImg.complete && stalagmiteImg.naturalHeight !== 0) {
+            // Draw the pillar image starting from its calculated top edge down towards the ground
             ctx.drawImage(stalagmiteImg, this.x, this.bottomY, OBSTACLE_WIDTH, this.bottomHeight);
         }
-    }; // Semicolon optional but fine
+    };
 
     this.update = function(deltaTime) {
         this.x -= OBSTACLE_SPEED * deltaTime;
 
-        // Check for scoring
-        // Use the adjusted collision width for scoring as well
-        let collisionX = canvas.width / 3; // Beholder's X position
-        let obstacleCollisionRightEdge = this.x + (OBSTACLE_WIDTH * OBSTACLE_COLLISION_WIDTH_FACTOR);
+        // --- Scoring Check ---
+        let collisionX = canvas.width / 3;
+        let beholderRightEdgeForScore = collisionX + BEHOLDER_SIZE * 0.5;
 
-        if (!this.scored && this.x + OBSTACLE_WIDTH < collisionX) {
-             // Check if the beholder has passed the obstacle's visual right edge
-            if (this.x + OBSTACLE_WIDTH < collisionX - (BEHOLDER_SIZE * 0.5)) { // Adjusted check
+        if (!this.scored && (this.x + OBSTACLE_WIDTH) < beholderRightEdgeForScore) {
                 score++;
+                playSound(coinSound); // <<< Play coin sound on score increase
                 this.scored = true;
-                console.log("Score:", score); // For debugging
-            }
+                console.log("Score:", score); // Keep for debugging
         }
     };
-} // <--- THIS is the single, correct closing brace for the constructor function
+}
 
-function addObstacle(xPos) {
-    // Calculate a random gap position, ensuring it's not too close to the top/bottom edges
-    const minGapY = OBSTACLE_GAP / 2 + 30; // Min distance from top
-    const maxGapY = canvas.height - OBSTACLE_GAP / 2 - 30; // Min distance from bottom
-    const gapY = Math.random() * (maxGapY - minGapY) + minGapY;
-    obstacles.push(new Obstacle(xPos, gapY));
+function addObstacle(startX) {
+    // Calculate random Y position for the top of the gap
+    const minGapTop = 50; // Minimum distance from the top edge
+    const maxGapTop = groundY - OBSTACLE_GAP - 50; // Adjusted max gap top calculation
+
+    let gapTopY;
+
+    // Ensure minGapTop is less than maxGapTop to prevent errors
+    if (minGapTop >= maxGapTop) {
+        // This error *shouldn't* happen now, but keep it as a safeguard
+        console.error(`Obstacle GAP calculation error. minGapTop: ${minGapTop}, maxGapTop: ${maxGapTop} (groundY: ${groundY}, OBSTACLE_GAP: ${OBSTACLE_GAP}). Using fallback.`);
+        gapTopY = canvas.height / 2 - OBSTACLE_GAP / 2; // Center the gap vertically
+    } else {
+        // Calculate the random top position for the gap
+        gapTopY = Math.random() * (maxGapTop - minGapTop) + minGapTop;
+    }
+
+    // Pass BOTH startX and the calculated gapTopY to the constructor
+    obstacles.push(new Obstacle(startX, gapTopY));
 }
 
 function manageObstacles() {
@@ -229,15 +289,24 @@ function manageObstacles() {
 
 // --- Collision Detection ---
 function checkCollisions() {
-    const beholderX = canvas.width / 3; // Center X of beholder
+    const beholderX = canvas.width / 3;
     const beholderLeft = beholderX - (BEHOLDER_SIZE / 2);
     const beholderRight = beholderX + (BEHOLDER_SIZE / 2);
     const beholderTop = beholderY - (BEHOLDER_SIZE / 2);
     const beholderBottom = beholderY + (BEHOLDER_SIZE / 2);
 
-    // Check collision with top/bottom boundaries
-    if (beholderTop < 0 || beholderBottom > canvas.height) {
-        console.log("Boundary Collision");
+    // Check collision with top boundary
+    if (beholderTop < 0) {
+         console.log("Top Boundary Collision - Game Over");
+        return true;
+    }
+
+    // --- Check collision with GROUND --- <<< MODIFIED
+    if (beholderBottom >= groundY) { // Check if beholder hits or goes below ground level
+         console.log("Ground Collision - Game Over");
+        // Set position exactly to ground to prevent sinking further before state change
+         beholderY = groundY - BEHOLDER_SIZE / 2;
+         velocityY = 0; // Stop downward movement immediately
         return true;
     }
 
@@ -296,13 +365,54 @@ function drawScore() {
     ctx.fillText(score, canvas.width / 2, 50);
 }
 
+// --- Helper Function for Text Wrapping ---
+function wrapText(context, text, x, y, maxWidth, lineHeight) {
+    const words = text.split(' ');
+    let line = '';
+    let currentY = y; // Start drawing at the provided y
+
+    context.textAlign = 'center'; // Ensure text is centered at the x position
+
+    for (let n = 0; n < words.length; n++) {
+        let testLine = line + words[n] + ' ';
+        let metrics = context.measureText(testLine);
+        let testWidth = metrics.width;
+
+        if (testWidth > maxWidth && n > 0) {
+            // Current line is full, draw it
+            context.fillText(line, x, currentY);
+            // Start a new line with the current word
+            line = words[n] + ' ';
+            // Move down for the next line
+            currentY += lineHeight;
+        } else {
+            // Word fits, add it to the current line
+            line = testLine;
+        }
+    }
+    // Draw the last line
+    context.fillText(line, x, currentY);
+}
+
 function drawStartScreen() {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'; // Semi-transparent overlay
+    // Semi-transparent overlay
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    ctx.fillStyle = '#e0e0e0';
-    ctx.font = "14px 'Press Start 2P'";
-    ctx.fillText("Click, Tap, or Press Spacebar to start!", canvas.width / 2, canvas.height / 2 + 20);
+    // --- Wrapped Text Instruction --- <<< MODIFIED
+    const startText = "Click, Tap, or Press Spacebar to start!";
+    const startFontSize = 14; // Adjust font size as needed
+    const lineHeight = startFontSize * 1.5; // Adjust line spacing (e.g., 1.5 times font size)
+    const textMaxWidth = canvas.width * 0.8; // Use 80% of canvas width for text wrapping
+    const textStartY = canvas.height / 1.5; // Adjust vertical position as needed
+
+    ctx.fillStyle = '#FFFFFF'; // White text
+    ctx.font = `${startFontSize}px "Press Start 2P"`;
+    ctx.textAlign = 'center'; // Centered horizontally
+    ctx.textBaseline = 'top'; // Align text from its top
+
+    // Call the wrapText helper function
+    wrapText(ctx, startText, canvas.width / 2, textStartY, textMaxWidth, lineHeight);
 }
 
 function drawGameOverScreen() {
@@ -325,17 +435,52 @@ function drawGameOverScreen() {
 
 // --- Input Handling ---
 function handleInput() {
-    // Apply LIFT (instantaneous velocity change in pixels/second)
     if (gameState === 'start' || gameState === 'playing') {
-        velocityY = LIFT; // Set velocity directly (LIFT is now pixels/sec)
+        velocityY = LIFT; // Apply lift
+        playSound(wingSound); // <<< Play wing sound on flap/click/tap
+
         if (gameState === 'start') {
-            gameState = 'playing'; // Start playing on first input
-            frameCount = 0; // Reset frame count for animation cycle? Optional.
-            obstacles = []; // Clear any initial obstacles if needed
-            spawnInitialObstacles(); // Respawn obstacles for a fresh start
+            gameState = 'playing';
+            // Reset frame count? Optional.
+            // Clear obstacles and respawn? Depends if you want start screen obstacles removed.
+            // obstacles = []; // Uncomment if you want obstacles cleared on first tap
+            // spawnInitialObstacles(); // Uncomment if you want obstacles cleared on first tap
         }
     } else if (gameState === 'gameOver') {
          resetGame(); // Allow restarting from gameOver
+    }
+}
+
+// --- Add Ground Update Function ---
+function updateGround(deltaTime) {
+    groundX -= OBSTACLE_SPEED * deltaTime;
+    // If ground has scrolled its full width off screen, reset it
+    // Use groundImg.width for accurate reset if image is loaded
+    const groundWidth = (groundImg.complete && groundImg.naturalWidth) ? groundImg.naturalWidth : canvas.width; // Use image width or fallback
+    if (groundX <= -groundWidth) {
+        groundX += groundWidth; // Add width to reset seamlessly
+    }
+}
+
+// --- Add Ground Draw Function ---
+function drawGround() {
+    if (groundImg.complete && groundImg.naturalHeight !== 0) {
+        const imgWidth = groundImg.naturalWidth;
+        const imgHeight = groundImg.naturalHeight; // Use actual height if possible
+        groundY = canvas.height - imgHeight; // Recalculate groundY based on actual image height
+
+        // Draw the ground image potentially multiple times to cover the canvas width
+        let currentX = groundX;
+        while (currentX < canvas.width) {
+             ctx.drawImage(groundImg, currentX, groundY, imgWidth, imgHeight);
+             currentX += imgWidth; // Move to the next drawing position
+        }
+
+    } else {
+         // Fallback if image not ready (e.g., draw a rect)
+         groundY = canvas.height - GROUND_HEIGHT; // Use constant height
+         ctx.fillStyle = '#A0522D'; // Brown color for fallback ground
+         ctx.fillRect(0, groundY, canvas.width, GROUND_HEIGHT);
     }
 }
 
@@ -368,41 +513,56 @@ function gameLoop(timestamp) {
     // --- Update and Draw Obstacles ---
     for (let i = obstacles.length - 1; i >= 0; i--) {
         let obs = obstacles[i];
-        if (gameState === 'start' || gameState === 'playing') {
+
+        // Draw obstacles in start, playing, AND game over states
+        if (gameState === 'start' || gameState === 'playing' || gameState === 'gameOver') {
              obs.draw();
         }
+
+        // Only update position and check scoring/removal in 'playing' state
         if (gameState === 'playing') {
-            obs.update(deltaTime); // <<< Pass deltaTime
+            obs.update(deltaTime); // Pass deltaTime
             if (obs.x + OBSTACLE_WIDTH < 0) {
                 obstacles.splice(i, 1);
             }
         }
     }
-     if (gameState === 'playing') {
-        if (obstacles.length === 0 || obstacles[obstacles.length - 1].x < canvas.width - OBSTACLE_SPAWN_DISTANCE) {
+
+    // Add new obstacles only when playing
+    if (gameState === 'playing') {
+         if (obstacles.length === 0 || obstacles[obstacles.length - 1].x < canvas.width - OBSTACLE_SPAWN_DISTANCE) {
              addObstacle(canvas.width);
-        }
+         }
+     }
+
+    // --- Update Ground Position (only when playing) --- <<< ADD
+    if (gameState === 'playing') {
+         updateGround(deltaTime);
     }
 
+    // --- Draw Ground (before Beholder) --- <<< ADD
+    drawGround(); // Draw the ground layer
+
     // --- Draw & Update Beholder ---
-    Beholder(deltaTime); // <<< Pass deltaTime
+    Beholder(deltaTime);
 
     // --- Draw Score ---
     drawScore();
 
     // --- Handle Game States ---
-    if (gameState === 'playing') {
-        // Collision checks don't need deltaTime directly, they compare current positions
+     if (gameState === 'playing') {
         if (checkCollisions()) {
             gameState = 'gameOver';
+            playSound(punchSound); // <<< Play punch sound when collision occurs
+            // Any other immediate actions on game over can go here
         }
-        frameCount++; // Increment frameCount for animation
+        frameCount++;
     } else if (gameState === 'start') {
         drawStartScreen();
         frameCount++; // Keep animating on start screen
     } else if (gameState === 'gameOver') {
-        drawGameOverScreen();
-         frameCount++; // Keep animating on game over screen
+        drawGameOverScreen(); // Draw overlay
+        frameCount++; // Keep animating on game over screen
     }
 
     // --- Request Next Frame ---
@@ -410,10 +570,28 @@ function gameLoop(timestamp) {
 }
 
 function startGameIfReady() {
+    console.log(`startGameIfReady called: isWindowLoaded=${isWindowLoaded}, imagesLoaded=${imagesLoaded}/${totalImages}`); // Keep for debugging
     if (isWindowLoaded && imagesLoaded === totalImages) {
-        console.log("Starting game loop");
+        console.log("Starting game loop...");
+
+        // --- Recalculate final groundY now that groundImg is loaded ---
+        // Ensure groundY is accurate before creating obstacles
+        if (groundImg.complete && groundImg.naturalHeight !== 0) {
+             groundY = canvas.height - groundImg.naturalHeight;
+        } else {
+             console.warn("Ground image not ready at game start, using constant height.");
+             groundY = canvas.height - GROUND_HEIGHT; // Fallback
+        }
+
+        // --- Spawn initial obstacles HERE --- <<< MOVED
+        spawnInitialObstacles();
+
+        // --- Start the loop ---
         lastTime = 0; // Initialize lastTime before starting loop
-        requestAnimationFrame(gameLoop); // Start the loop
+        requestAnimationFrame(gameLoop); // Start the loop AFTER spawning obstacles
+
+    } else {
+        console.log("Conditions not met yet."); // Keep for debugging
     }
 }
 
@@ -436,6 +614,9 @@ window.onload = function() {
         console.error("Failed to get 2D rendering context.");
         return;
     }
+
+    // Initial estimate is less critical now, but doesn't hurt
+    groundY = canvas.height - GROUND_HEIGHT;
 
     // Add Event Listeners (as previously corrected)
     document.addEventListener('keydown', function(e) {
