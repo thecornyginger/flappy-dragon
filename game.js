@@ -1042,8 +1042,8 @@ async function loadGameSounds() {
             loadSound('sounds/point.wav'),
             loadSound('sounds/wing.wav'),
             loadSound('sounds/hit.wav'),
-            loadSound('sounds/die.wav'), // Load die sound
-            loadSound('sounds/skyrim-snes.mp3') // Load background music
+            loadSound('sounds/die.wav'), 
+            loadSound('sounds/skyrim-snes.mp3') 
         ]);
 
         // Check if all sounds loaded (optional)
