@@ -21,12 +21,79 @@ const ROTATION_VELOCITY_SCALE = 600; // Lower value = more sensitive rotation to
 let imagesLoaded = 0;
 const totalImages = 7; // <<< INCREMENT totalImages (Beholder x3, Obstacles x2, Background, Ground)
 let allImagesLoaded = false;
+let audioContext = null; // <<< ADD: Web Audio API context
+let audioBuffers = {}; // <<< ADD: To store decoded audio data
+const soundFiles = { // <<< ADD: Map keys to sound file paths
+    wing: 'sounds/wing.wav',
+    coin: 'sounds/point.wav',
+    hit: 'sounds/hit.wav',
+    die: 'sounds/die.wav'
+};
+let soundsLoaded = 0; // <<< ADD: Counter for loaded sounds
+const totalSounds = Object.keys(soundFiles).length; // <<< ADD: Total number of sounds
+let allSoundsLoaded = false; // <<< ADD: Flag for sound loading completion
+let isAudioContextResumed = false; // <<< ADD: Flag for AudioContext state
 
 function imageLoaded() {
     imagesLoaded++;
-    console.log(`Image ${imagesLoaded}/${totalImages} loaded.`); // Add for debugging
-    // No need to check totalImages here, startGameIfReady does it
-    startGameIfReady(); // Check if the window is also loaded
+    console.log(`Image ${imagesLoaded}/${totalImages} loaded.`);
+    startGameIfReady();
+}
+
+// <<< ADD: Function to handle sound loading completion
+function soundLoaded(soundKey) {
+    soundsLoaded++;
+    console.log(`Sound '${soundKey}' (${soundsLoaded}/${totalSounds}) loaded.`);
+    if (soundsLoaded === totalSounds) {
+        allSoundsLoaded = true;
+        console.log("All sounds loaded.");
+        startGameIfReady(); // Check if images are also ready
+    }
+}
+
+// <<< ADD: Function to load a single audio file
+async function loadAudioFile(key, url) {
+    if (!audioContext) return; // Don't load if context creation failed
+
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status} for ${url}`);
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        audioBuffers[key] = audioBuffer;
+        soundLoaded(key); // Increment counter and check completion
+    } catch (error) {
+        console.error(`Error loading sound '${key}' (${url}):`, error);
+        // Optionally, handle the error differently, e.g., set a flag or use a fallback sound
+        // For now, we just log the error and count it as 'loaded' to not block the game,
+        // but the sound won't be playable.
+        soundLoaded(key);
+    }
+}
+
+// <<< ADD: Function to load all sounds
+function loadAllSounds() {
+    console.log("Starting to load sounds...");
+    // Initialize AudioContext here, preferably on first user interaction,
+    // but we'll try initializing it now and resume later.
+    try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        console.log("AudioContext created successfully.");
+    } catch (e) {
+        console.error("Web Audio API is not supported in this browser or context creation failed:", e);
+        // If AudioContext fails, we can't load/play sounds via Web Audio API.
+        // Set allSoundsLoaded to true to prevent blocking the game start,
+        // although sounds won't work.
+        allSoundsLoaded = true;
+        soundsLoaded = totalSounds; // Mark as 'loaded' to satisfy startGameIfReady
+        return; // Exit if context fails
+    }
+
+    for (const key in soundFiles) {
+        loadAudioFile(key, soundFiles[key]);
+    }
 }
 
 // --- Game Variables ---
@@ -50,10 +117,11 @@ const backgroundImg = new Image();
 const groundImg = new Image(); // Ground image object
 
 // --- Load Sounds ---
-const wingSound = new Audio('sounds/wing.wav'); // Replace with your actual file path
-const coinSound = new Audio('sounds/point.wav'); // Replace with your actual file path
-const punchSound = new Audio('sounds/hit.wav'); // Replace with your actual file path
-const dieSound = new Audio('sounds/die.wav'); // <<< ADD Die sound object
+// REMOVE OLD AUDIO OBJECT CREATION
+// const wingSound = new Audio('sounds/wing.wav');
+// const coinSound = new Audio('sounds/point.wav');
+// const punchSound = new Audio('sounds/hit.wav');
+// const dieSound = new Audio('sounds/die.wav');
 // Preload suggestion (optional, helps ensure sounds are ready)
 // wingSound.load();
 // coinSound.load();
@@ -90,6 +158,9 @@ stalagmiteImg.src = 'images/stalagmite.png';
 backgroundImg.src = 'images/background.png';
 groundImg.src = 'images/base.png';
 
+// <<< CALL loadAllSounds here after assigning image sources >>>
+loadAllSounds();
+
 // --- Game Initialization ---
 function resetGame() {
     beholderY = canvas.height / 2;
@@ -117,15 +188,24 @@ function degToRad(degrees) {
     return degrees * (Math.PI / 180);
 }
 
-// <<< ADD THIS HELPER FUNCTION >>>
-function playSound(sound) {
-    // Reset playback to the beginning to allow rapid replays
-    sound.currentTime = 0;
-    // Play the sound
-    sound.play().catch(error => {
-        // Autoplay policies might prevent sound initially until user interaction
-        console.warn("Sound play failed (likely requires user interaction first):", error);
-    });
+// <<< MODIFY playSound FUNCTION >>>
+function playSound(soundKey) {
+    // Check if context exists, is resumed, and buffer is loaded
+    if (!audioContext || !isAudioContextResumed || !audioBuffers[soundKey]) {
+        if (!audioContext) console.warn(`Cannot play sound '${soundKey}', AudioContext not available.`);
+        else if (!isAudioContextResumed) console.warn(`Cannot play sound '${soundKey}', AudioContext not resumed (requires user interaction).`);
+        else if (!audioBuffers[soundKey]) console.warn(`Cannot play sound '${soundKey}', buffer not loaded or loading failed.`);
+        return;
+    }
+
+    try {
+        const source = audioContext.createBufferSource(); // Create sound source
+        source.buffer = audioBuffers[soundKey];         // Assign the buffer
+        source.connect(audioContext.destination);       // Connect to speakers
+        source.start(0);                                // Play immediately
+    } catch (error) {
+        console.error(`Error playing sound '${soundKey}':`, error);
+    }
 }
 
 // --- Game Objects ---
@@ -230,7 +310,7 @@ function Obstacle(x, gapTopY) {
 
         if (!this.scored && (this.x + OBSTACLE_WIDTH) < beholderRightEdgeForScore) {
                 score++;
-                playSound(coinSound); // <<< Play coin sound on score increase
+                playSound('coin'); // <<< UPDATE: Use sound key 'coin'
                 this.scored = true;
                 console.log("Score:", score); // Keep for debugging
         }
@@ -289,45 +369,51 @@ function manageObstacles() {
 
 // --- Collision Detection ---
 function checkCollisions() {
-    const beholderX = canvas.width / 3;
-    const beholderLeft = beholderX - (BEHOLDER_SIZE / 2);
-    const beholderRight = beholderX + (BEHOLDER_SIZE / 2);
-    const beholderTop = beholderY - (BEHOLDER_SIZE / 2);
-    const beholderBottom = beholderY + (BEHOLDER_SIZE / 2);
+    const beholderCenterX = canvas.width / 3;
+    const beholderRadius = (BEHOLDER_SIZE / 2) * OBSTACLE_COLLISION_WIDTH_FACTOR; // Effective collision radius
+    const beholderTop = beholderY - beholderRadius;
+    const beholderBottom = beholderY + beholderRadius;
 
-    // Check collision with top boundary
-    if (beholderTop < 0) {
-         console.log("Top Boundary Collision - Game Over");
-        return true;
+    // --- Check Ground Collision ---
+    // Ground collision ONLY triggers game over if not already over
+    if (beholderBottom >= groundY && gameState !== 'gameOver') {
+        console.log("Ground collision!");
+        setGameOverState(); // Use the dedicated function
+        playSound('hit'); // Play hit sound immediately on ground impact
+        // Note: setGameOverState also plays the 'die' sound
+        return true; // Collision detected
     }
 
-    // --- Check collision with GROUND --- <<< MODIFIED
-    if (beholderBottom >= groundY) { // Check if beholder hits or goes below ground level
-         console.log("Ground Collision - Game Over");
-        // Set position exactly to ground to prevent sinking further before state change
-         beholderY = groundY - BEHOLDER_SIZE / 2;
-         velocityY = 0; // Stop downward movement immediately
-        return true;
-    }
+    // --- Check Obstacle Collision ---
+    for (let i = 0; i < obstacles.length; i++) {
+        const obs = obstacles[i];
+        const beholderLeft = beholderCenterX - beholderRadius;
+        const beholderRight = beholderCenterX + beholderRadius;
+        const obsRight = obs.x + OBSTACLE_WIDTH;
 
-    // Check collision with obstacles
-    for (let obs of obstacles) {
-        // Calculate the effective collision edges for the obstacle
-        // Use the narrower collision factor for horizontal check
-        let obstacleCollisionLeftEdge = obs.x + (OBSTACLE_WIDTH * (1 - OBSTACLE_COLLISION_WIDTH_FACTOR) / 2);
-        let obstacleCollisionRightEdge = obs.x + OBSTACLE_WIDTH - (OBSTACLE_WIDTH * (1 - OBSTACLE_COLLISION_WIDTH_FACTOR) / 2);
-
-        // Check for horizontal overlap (using collision factor)
-        if (beholderRight > obstacleCollisionLeftEdge && beholderLeft < obstacleCollisionRightEdge) {
-            // Check for vertical overlap (collision with top or bottom part)
+        // Basic X overlap check first (more efficient)
+        if (beholderRight > obs.x && beholderLeft < obsRight) {
+            // Check Y collision (hit top pipe OR bottom pipe)
             if (beholderTop < obs.topHeight || beholderBottom > obs.bottomY) {
-                 console.log("Obstacle Collision");
+                console.log("Obstacle Collision Detected!");
+                setGameOverState(); // Use the dedicated function
+                playSound('hit'); // Play hit sound on obstacle impact
+                // Note: setGameOverState also plays the 'die' sound
                 return true; // Collision detected
             }
         }
     }
 
-    return false; // No collision
+    // --- Check Top Boundary Collision ---
+    if (beholderTop < 0 && gameState !== 'gameOver') { // Hit the top ceiling
+        console.log("Top boundary collision!");
+        setGameOverState(); // Use the dedicated function
+        playSound('hit'); // Play hit sound on ceiling impact
+        // Note: setGameOverState also plays the 'die' sound
+        return true;
+    }
+
+    return false; // No collision detected
 }
 
 function drawBackground() {
@@ -395,59 +481,186 @@ function wrapText(context, text, x, y, maxWidth, lineHeight) {
 }
 
 function drawStartScreen() {
-    // Semi-transparent overlay
     ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // --- Wrapped Text Instruction --- <<< MODIFIED
-    const startText = "Click, Tap, or Press Spacebar to start!";
-    const startFontSize = 14; // Adjust font size as needed
-    const lineHeight = startFontSize * 1.5; // Adjust line spacing (e.g., 1.5 times font size)
-    const textMaxWidth = canvas.width * 0.8; // Use 80% of canvas width for text wrapping
-    const textStartY = canvas.height / 1.5; // Adjust vertical position as needed
-
-    ctx.fillStyle = '#FFFFFF'; // White text
-    ctx.font = `${startFontSize}px "Press Start 2P"`;
-    ctx.textAlign = 'center'; // Centered horizontally
-    ctx.textBaseline = 'top'; // Align text from its top
-
-    // Call the wrapText helper function
-    wrapText(ctx, startText, canvas.width / 2, textStartY, textMaxWidth, lineHeight);
+    ctx.fillStyle = 'white';
+    ctx.font = '30px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('Click or Press Space to Start', canvas.width / 2, canvas.height / 2);
 }
 
 function drawGameOverScreen() {
-     ctx.fillStyle = 'rgba(80, 0, 0, 0.7)'; // Semi-transparent dark red overlay
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; // Darker overlay
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    ctx.fillStyle = '#ffcc00';
-    ctx.font = "32px 'Press Start 2P'";
+    ctx.fillStyle = 'white';
+    ctx.font = '40px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 60);
-
-    ctx.fillStyle = '#e0e0e0';
-    ctx.font = "20px 'Press Start 2P'";
+    ctx.fillText('Game Over', canvas.width / 2, canvas.height / 2 - 40);
+    ctx.font = '25px Arial';
     ctx.fillText(`Score: ${score}`, canvas.width / 2, canvas.height / 2);
-
-    ctx.font = "14px 'Press Start 2P'";
-    ctx.fillText("Click or Space to Retry", canvas.width / 2, canvas.height / 2 + 50);
+    ctx.font = '20px Arial';
+    ctx.fillText('Click or Space to Restart', canvas.width / 2, canvas.height / 2 + 40);
 }
 
+function setGameOverState() {
+    if (gameState !== 'gameOver') { // Prevent multiple triggers
+        gameState = 'gameOver';
+        console.log("Game Over");
+        // Play die sound when game over state is set
+        playSound('die'); // <<< Play 'die' sound on game over
+    }
+}
 
 // --- Input Handling ---
-function handleInput() {
-    if (gameState === 'start' || gameState === 'playing') {
-        velocityY = LIFT; // Apply lift
-        playSound(wingSound); // <<< Play wing sound on flap/click/tap
+function handleInput(event) {
+    // --- Resume Audio Context on First Interaction --- <<<
+    handleFirstInteraction(); // Call this first on any interaction
 
-        if (gameState === 'start') {
-            gameState = 'playing';
-            // Reset frame count? Optional.
-            // Clear obstacles and respawn? Depends if you want start screen obstacles removed.
-            // obstacles = []; // Uncomment if you want obstacles cleared on first tap
-            // spawnInitialObstacles(); // Uncomment if you want obstacles cleared on first tap
-        }
+    if (gameState === 'start') {
+        gameState = 'playing';
+        // Spawn initial obstacles only when transitioning from start to playing
+        spawnInitialObstacles();
+        velocityY = LIFT; // Give initial flap
+        playSound('wing');
+    } else if (gameState === 'playing') {
+        velocityY = LIFT; // Apply upward velocity
+        playSound('wing'); // <<< UPDATE: Use sound key 'wing'
     } else if (gameState === 'gameOver') {
-         resetGame(); // Allow restarting from gameOver
+        // Only reset if the game is actually over
+        resetGame();
+        // No need to spawn obstacles here, resetGame clears them,
+        // and handleInput will call spawnInitialObstacles when moving to 'playing'
+    }
+
+    // Prevent default for spacebar keydown if that's the event type
+    if (event && event.type === 'keydown' && event.code === 'Space') {
+        event.preventDefault();
+    }
+}
+
+function handleFirstInteraction() {
+    // Only attempt to resume if context exists and is suspended
+    if (audioContext && audioContext.state === 'suspended') {
+        audioContext.resume().then(() => {
+            console.log("AudioContext resumed successfully!");
+            isAudioContextResumed = true;
+        }).catch(e => {
+            console.error("Failed to resume AudioContext:", e);
+        });
+    } else if (audioContext && audioContext.state === 'running') {
+         isAudioContextResumed = true; // Already running
+    } // No warning if context doesn't exist, as loadAllSounds handles that
+}
+
+// <<< DEFINE initGame FUNCTION >>>
+function initGame() {
+    console.log("Initializing game...");
+    canvas = document.getElementById('gameCanvas');
+    if (!canvas) {
+        console.error("Canvas element with ID 'gameCanvas' not found!");
+        return;
+    }
+    ctx = canvas.getContext('2d');
+    if (!ctx) {
+        console.error("Failed to get 2D rendering context.");
+        return;
+    }
+
+    // Calculate groundY based on image (if loaded) or constant
+    groundY = (groundImg.complete && groundImg.naturalHeight !== 0)
+                ? canvas.height - groundImg.naturalHeight
+                : canvas.height - GROUND_HEIGHT;
+
+    // Setup animation frames (should be safe now as images are loaded)
+    setupAnimationFrames();
+
+    // --- Setup Event Listeners --- <<< Moved inside initGame
+    // Use named function for removal/prevention of multiple listeners if needed later
+    const keydownHandler = (event) => {
+        if (event.code === 'Space') {
+            handleInput(event); // Pass event for potential preventDefault
+        }
+        // Add other key handlers here if needed (e.g., pause P key)
+        if (event.code === 'KeyP') {
+             togglePause(); // Add pause toggle on P key
+        }
+    };
+    const interactionHandler = (event) => {
+        handleInput(event); // Pass event for potential preventDefault in touch
+    };
+
+    // Clear previous listeners if re-initializing (optional but good practice)
+    document.removeEventListener('keydown', keydownHandler);
+    canvas.removeEventListener('click', interactionHandler);
+    canvas.removeEventListener('touchstart', interactionHandler);
+
+    // Add listeners
+    document.addEventListener('keydown', keydownHandler);
+    canvas.addEventListener('click', interactionHandler);
+    canvas.addEventListener('touchstart', interactionHandler, { passive: false });
+
+    // --- Initial Game State Setup ---
+    resetGame();
+    lastTime = 0; // Reset lastTime for the new game loop start
+    isPaused = false; // Ensure game is not paused initially
+
+    // --- Start the Game Loop ---
+    requestAnimationFrame(gameLoop);
+    console.log("Game initialized and loop started.");
+}
+
+// --- Main Game Loop ---
+let lastTime = 0;
+let isPaused = false; // Ensure isPaused is defined in an accessible scope
+
+function gameLoop(currentTime) {
+    if (lastTime === 0) {
+        lastTime = currentTime; // Initialize lastTime on the first frame
+        requestAnimationFrame(gameLoop);
+        return;
+    }
+
+    const deltaTime = (currentTime - lastTime) / 1000; // Delta time in seconds
+
+    // --- Update Game State ---
+    if (gameState === 'playing') {
+        frameCount++; // Increment frame counter
+        updateObstacles(deltaTime);
+        updateGround(deltaTime); // <<< Update ground scroll
+        // Check for collisions AFTER updating positions
+        if (checkCollisions()) {
+             // setGameOverState handles changing gameState and playing sounds
+             // No need to directly change gameState here anymore
+        }
+    }
+
+    // --- Draw Game Objects ---
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Draw background first
+    drawBackground();
+    // Draw obstacles
+    obstacles.forEach(obstacle => obstacle.draw());
+    // Draw Ground (Scrolling)
+    drawGround(); // <<< Draw the scrolling ground
+    // Draw score LAST so it's on top
+    drawScore();
+    // Draw Beholder (allows drawing over ground when falling in gameOver)
+    Beholder(deltaTime); // <<< Draw beholder AFTER ground/obstacles
+
+    // --- Game State Specific Drawing ---
+    if (gameState === 'start') {
+        drawStartScreen();
+    } else if (gameState === 'gameOver') {
+        drawGameOverScreen();
+    }
+
+    // Request next frame
+    lastTime = currentTime; // Update lastTime for the next frame
+    if (!isPaused) { // <<< Check pause state before requesting next frame
+        requestAnimationFrame(gameLoop);
+    } else {
+        console.log("Game loop paused.");
     }
 }
 
@@ -484,168 +697,32 @@ function drawGround() {
     }
 }
 
-// --- Game Loop ---
-function gameLoop(timestamp) {
-    if (!ctx || !canvas) {
-        console.error("Canvas or context missing in gameLoop!");
-        return;
-    }
-
-    // --- Calculate Delta Time ---
-    if (lastTime === 0) { // Handle first frame
-        lastTime = timestamp;
+// --- Pause Functionality ---
+function togglePause() {
+    isPaused = !isPaused;
+    console.log(`Game ${isPaused ? 'paused' : 'resumed'}.`);
+    if (!isPaused) {
+        // If resuming, reset lastTime and request the next frame immediately
+        lastTime = 0; // Reset lastTime to avoid large deltaTime jump
         requestAnimationFrame(gameLoop);
-        return;
     }
-    let deltaTime = (timestamp - lastTime) / 1000; // Time elapsed in seconds
-    lastTime = timestamp;
-
-    // --- Frame Rate Cap (Optional but recommended) ---
-    // Prevent huge jumps if tab loses focus or stutters
-    deltaTime = Math.min(deltaTime, 1 / 30); // Max delta = 1/30th sec
-
-    // --- Clear Canvas ---
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // --- Draw Background ---
-    drawBackground();
-
-    // --- Update and Draw Obstacles ---
-    for (let i = obstacles.length - 1; i >= 0; i--) {
-        let obs = obstacles[i];
-
-        // Draw obstacles in start, playing, AND game over states
-        if (gameState === 'start' || gameState === 'playing' || gameState === 'gameOver') {
-             obs.draw();
-        }
-
-        // Only update position and check scoring/removal in 'playing' state
-        if (gameState === 'playing') {
-            obs.update(deltaTime); // Pass deltaTime
-            if (obs.x + OBSTACLE_WIDTH < 0) {
-                obstacles.splice(i, 1);
-            }
-        }
-    }
-
-    // Add new obstacles only when playing
-    if (gameState === 'playing') {
-         if (obstacles.length === 0 || obstacles[obstacles.length - 1].x < canvas.width - OBSTACLE_SPAWN_DISTANCE) {
-             addObstacle(canvas.width);
-         }
-     }
-
-    // --- Update Ground Position (only when playing) --- <<< ADD
-    if (gameState === 'playing') {
-         updateGround(deltaTime);
-    }
-
-    // --- Draw Ground (before Beholder) --- <<< ADD
-    drawGround(); // Draw the ground layer
-
-    // --- Draw & Update Beholder ---
-    Beholder(deltaTime);
-
-    // --- Draw Score ---
-    drawScore();
-
-    // --- Handle Game States ---
-     if (gameState === 'playing') {
-        if (checkCollisions()) {
-            gameState = 'gameOver';
-            playSound(punchSound); // <<< Play punch sound when collision occurs
-            // Any other immediate actions on game over can go here
-        }
-        frameCount++;
-    } else if (gameState === 'start') {
-        drawStartScreen();
-        frameCount++; // Keep animating on start screen
-    } else if (gameState === 'gameOver') {
-        drawGameOverScreen(); // Draw overlay
-        frameCount++; // Keep animating on game over screen
-    }
-
-    // --- Request Next Frame ---
-    requestAnimationFrame(gameLoop); // Let the browser schedule the next frame
+    // No need to call pause for audio context, source nodes play once and stop.
 }
 
-function startGameIfReady() {
-    console.log(`startGameIfReady called: isWindowLoaded=${isWindowLoaded}, imagesLoaded=${imagesLoaded}/${totalImages}`); // Keep for debugging
-    if (isWindowLoaded && imagesLoaded === totalImages) {
-        console.log("Starting game loop...");
-
-        // --- Recalculate final groundY now that groundImg is loaded ---
-        // Ensure groundY is accurate before creating obstacles
-        if (groundImg.complete && groundImg.naturalHeight !== 0) {
-             groundY = canvas.height - groundImg.naturalHeight;
-        } else {
-             console.warn("Ground image not ready at game start, using constant height.");
-             groundY = canvas.height - GROUND_HEIGHT; // Fallback
-        }
-
-        // --- Spawn initial obstacles HERE --- <<< MOVED
-        spawnInitialObstacles();
-
-        // --- Start the loop ---
-        lastTime = 0; // Initialize lastTime before starting loop
-        requestAnimationFrame(gameLoop); // Start the loop AFTER spawning obstacles
-
-    } else {
-        console.log("Conditions not met yet."); // Keep for debugging
-    }
-}
-
-// --- Start the Game ---
-// Initialize variables
-
-// !! REMOVE this call to resetGame() from the global scope !!
-// resetGame(); // This was line 384 - REMOVE OR COMMENT OUT
-
-// Ensure game initialization happens after the HTML document is fully loaded
-window.onload = function() {
-    console.log("Window loaded.");
-    canvas = document.getElementById('gameCanvas');
-    if (!canvas) {
-        console.error("Canvas element with ID 'gameCanvas' not found!");
-        return;
-    }
-    ctx = canvas.getContext('2d');
-    if (!ctx) {
-        console.error("Failed to get 2D rendering context.");
-        return;
-    }
-
-    // Initial estimate is less critical now, but doesn't hurt
-    groundY = canvas.height - GROUND_HEIGHT;
-
-    // Add Event Listeners (as previously corrected)
-    document.addEventListener('keydown', function(e) {
-        if (e.code === 'Space') {
-            // Prevent spacebar from scrolling the page
-            e.preventDefault();
-            handleInput();
-        }
-    });
-
-    canvas.addEventListener('mousedown', handleInput);
-
-    canvas.addEventListener('touchstart', (e) => {
-         e.preventDefault(); // Prevent touch events from causing scrolling/zooming
-         handleInput();
-    });
-    // --- End of Added Event Listeners ---
-
-    // Call resetGame AFTER canvas is defined (this call is correct)
-    resetGame(); // Keep this call inside window.onload
-
-    // Initialize other game objects AFTER canvas is defined
-    // dragon = new Dragon(50, canvas.height / 2); // Example
-    // pipes = new Pipes(canvas); // Example
-
-    // Setup animation frames AFTER images are loaded (potentially already loaded)
-    // Or ensure setupAnimationFrames is robust enough if called before load complete
-    setupAnimationFrames();
-
-    isWindowLoaded = true;
+// Wait for the DOM to be fully loaded before trying to get canvas
+// This listener now just triggers the asset loading check
+document.addEventListener('DOMContentLoaded', () => {
+    console.log("DOM fully loaded.");
+    // We don't call initGame directly here anymore.
+    // Instead, we rely on images/sounds loading and the window load event
+    // to eventually call startGameIfReady -> initGame.
+    // Ensure the load checkers are called in case assets loaded before DOM.
     startGameIfReady();
-};
+});
+
+// Wait for the window (including images, scripts) to load
+window.addEventListener('load', () => {
+    console.log("Window finished loading.");
+    isWindowLoaded = true;
+    startGameIfReady(); // Check if assets are also ready
+});
