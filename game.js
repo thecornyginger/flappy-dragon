@@ -329,7 +329,7 @@ function checkCollisions() {
         if (beholderRight > obstacleCollisionLeftEdge && beholderLeft < obstacleCollisionRightEdge) {
             // Check for vertical overlap (collision with top or bottom part)
             if (beholderTop < obs.topHeight || beholderBottom > obs.bottomY) {
-                 console.log("Obstacle Collision");
+                 console.log("Obstacle Collision"); playSound(dieSound.src);
                 return true; // Collision detected
             }
         }
@@ -568,8 +568,7 @@ function gameLoop(timestamp) {
             gameState = 'gameOver';
             backgroundMusic.pause(); // <<< STOP Music
             backgroundMusic.currentTime = 0; // <<< Reset music time
-            playSound(punchSound.src); // <<< Play punch sound when collision occurs (Modified: Pass .src)
-            playSound(dieSound.src);   // <<< MOVED Play die sound here
+            playSound(punchSound.src); // <<< Play punch sound when collision occurs (Modified: Pass .src)   // <<< MOVED Play die sound here
             // --- Update High Score ---
             if (score > highScore) {
                 highScore = score;
