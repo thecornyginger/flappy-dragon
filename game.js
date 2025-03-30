@@ -4,15 +4,15 @@ let ctx;
 let isWindowLoaded = false; // <-- Add this flag
 
 // --- Game Constants ---
-const GRAVITY = 0.15;
-const LIFT = -4;
+const GRAVITY = 900;  // Pixels per second per second (adjust significantly upwards)
+const LIFT = -300;     // Pixels per second (instantaneous velocity change, adjust magnitude)
 const BEHOLDER_SIZE = 50;
 const OBSTACLE_WIDTH = 60;
 const OBSTACLE_COLLISION_WIDTH_FACTOR = 0.6; // Keep this from previous step
 const OBSTACLE_GAP = 150;
-const OBSTACLE_SPEED = 1.5; // Keep slowed-down speed
+const OBSTACLE_SPEED = 100; // Pixels per second (adjust)
 const OBSTACLE_SPAWN_DISTANCE = 200;
-const ANIMATION_SPEED = 15; // Change frame every 5 game loops (adjust as needed)
+const ANIMATION_THROTTLE = 5; // Keep animation frame-based for now, or adjust later
 
 // --- Image Loading Management ---
 let imagesLoaded = 0;
@@ -36,6 +36,8 @@ let frameCount;
 let gameState;
 let animationFrameIndex = 0; // Start at the first frame (down-flap)
 let beholderFrames = []; // Array to hold the animation image objects
+let lastTime = 0; // <<< ADD: Timestamp of the last frame
+let velocityY = 0; // <<< ADD: Velocity for Beholder
 
 // --- Asset Loading ---
 let beholderImg = new Image();         // Mid-flap (original)
@@ -78,14 +80,14 @@ function setupAnimationFrames() {
 // --- Game Initialization ---
 function resetGame() {
     beholderY = canvas.height / 2;
-    beholderVelY = 0;
+    velocityY = 0; // <<< ENSURE velocity is reset
     score = 0;
     obstacles = [];
     frameCount = 0;
     gameState = 'start';
     animationFrameIndex = 0; // Reset animation frame on game reset
     spawnInitialObstacles();
-    isGameOver = false;
+    console.log("Game Reset");
 }
 
 function spawnInitialObstacles() {
@@ -96,12 +98,16 @@ function spawnInitialObstacles() {
 }
 
 // --- Game Objects ---
-function Beholder() {
+function Beholder(deltaTime) {
+    // Apply gravity (acceleration = pixels/sec^2)
+    velocityY += GRAVITY * deltaTime; // Gravity effect over time
+    // Apply velocity (position change = pixels/sec * sec)
+    beholderY += velocityY * deltaTime; // Position update over time
 
     // --- Update Animation Frame ---
     // (Keep this animation logic exactly as it is)
     if (gameState === 'playing' || gameState === 'start') {
-        if (frameCount % ANIMATION_SPEED === 0) {
+        if (frameCount % ANIMATION_THROTTLE === 0) {
             animationFrameIndex = (animationFrameIndex + 1) % beholderFrames.length;
         }
     }
@@ -132,19 +138,7 @@ function Beholder() {
         );
     }
     // If neither image is ready, nothing is drawn (better than an error)
-
-
-    // --- Updating Position (Keep this logic) ---
-    // (Keep the position update logic exactly as it is)
-    if (gameState === 'playing') {
-        beholderVelY += GRAVITY;
-        beholderY += beholderVelY;
-    }
-    if (gameState === 'start') {
-         beholderY = canvas.height / 2 + Math.sin(frameCount * 0.1) * 5;
-         beholderVelY = 0;
-    }
-} // End of Beholder function
+}
 
 function Obstacle(x, gapY) {
     // --- Properties (Must be inside the constructor) ---
@@ -175,8 +169,8 @@ function Obstacle(x, gapY) {
         }
     }; // Semicolon optional but fine
 
-    this.update = function() {
-        this.x -= OBSTACLE_SPEED;
+    this.update = function(deltaTime) {
+        this.x -= OBSTACLE_SPEED * deltaTime;
 
         // Check for scoring
         // Use the adjusted collision width for scoring as well
@@ -329,92 +323,95 @@ function drawGameOverScreen() {
 
 // --- Input Handling ---
 function handleInput() {
-     if (gameState === 'start') {
-         gameState = 'playing';
-         beholderVelY = LIFT; // Give initial flap
-     } else if (gameState === 'playing') {
-         beholderVelY = LIFT; // Flap
-     } else if (gameState === 'gameOver') {
-         // Only reset if enough time has passed to prevent accidental instant restart
-         if (frameCount > 15) { // Small delay
-            resetGame();
-         }
-     }
+    // Apply LIFT (instantaneous velocity change in pixels/second)
+    if (gameState === 'start' || gameState === 'playing') {
+        velocityY = LIFT; // Set velocity directly (LIFT is now pixels/sec)
+        if (gameState === 'start') {
+            gameState = 'playing'; // Start playing on first input
+            frameCount = 0; // Reset frame count for animation cycle? Optional.
+            obstacles = []; // Clear any initial obstacles if needed
+            spawnInitialObstacles(); // Respawn obstacles for a fresh start
+        }
+    } else if (gameState === 'gameOver') {
+         resetGame(); // Allow restarting from gameOver
+    }
 }
 
 // --- Game Loop ---
-function gameLoop() {
+function gameLoop(timestamp) {
     if (!ctx || !canvas) {
         console.error("Canvas or context missing in gameLoop!");
         return;
     }
 
-    // 1. Clear Canvas
+    // --- Calculate Delta Time ---
+    if (lastTime === 0) { // Handle first frame
+        lastTime = timestamp;
+        requestAnimationFrame(gameLoop);
+        return;
+    }
+    let deltaTime = (timestamp - lastTime) / 1000; // Time elapsed in seconds
+    lastTime = timestamp;
+
+    // --- Frame Rate Cap (Optional but recommended) ---
+    // Prevent huge jumps if tab loses focus or stutters
+    deltaTime = Math.min(deltaTime, 1 / 30); // Max delta = 1/30th sec
+
+    // --- Clear Canvas ---
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 2. Draw Background FIRST
+    // --- Draw Background ---
     drawBackground();
 
-    // 3. Update and Draw Obstacles (Needs logic based on state)
-    // Iterate backwards to safely remove obstacles
+    // --- Update and Draw Obstacles ---
     for (let i = obstacles.length - 1; i >= 0; i--) {
         let obs = obstacles[i];
-
-        // Draw obstacles in both 'start' and 'playing' states
         if (gameState === 'start' || gameState === 'playing') {
              obs.draw();
         }
-
-        // Only update position and check scoring/removal in 'playing' state
         if (gameState === 'playing') {
-            obs.update();
-
-            // Remove obstacles that have gone off-screen
+            obs.update(deltaTime); // <<< Pass deltaTime
             if (obs.x + OBSTACLE_WIDTH < 0) {
                 obstacles.splice(i, 1);
             }
         }
     }
-
-     // Add new obstacles only when playing
-    if (gameState === 'playing') {
-        // Check if it's time to spawn a new obstacle based on the last one
+     if (gameState === 'playing') {
         if (obstacles.length === 0 || obstacles[obstacles.length - 1].x < canvas.width - OBSTACLE_SPAWN_DISTANCE) {
              addObstacle(canvas.width);
         }
     }
 
+    // --- Draw & Update Beholder ---
+    Beholder(deltaTime); // <<< Pass deltaTime
 
-    // 4. Draw & Update Beholder (handles animation internally)
-    Beholder(); // Make sure Beholder() updates position based on gameState
-
-    // 5. Draw Score
+    // --- Draw Score ---
     drawScore();
 
-    // 6. Handle Game States (Drawing overlays, checking collisions)
+    // --- Handle Game States ---
     if (gameState === 'playing') {
-        if (checkCollisions()) { // checkCollisions needs to use the 'obstacles' array
+        // Collision checks don't need deltaTime directly, they compare current positions
+        if (checkCollisions()) {
             gameState = 'gameOver';
-            frameCount = 0;
         }
-        frameCount++;
+        frameCount++; // Increment frameCount for animation
     } else if (gameState === 'start') {
-        drawStartScreen(); // Draw overlay
-        frameCount++;
+        drawStartScreen();
+        frameCount++; // Keep animating on start screen
     } else if (gameState === 'gameOver') {
-        drawGameOverScreen(); // Draw overlay
-        frameCount++;
+        drawGameOverScreen();
+         frameCount++; // Keep animating on game over screen
     }
 
-    // 7. Request Next Frame
-    requestAnimationFrame(gameLoop);
+    // --- Request Next Frame ---
+    requestAnimationFrame(gameLoop); // Let the browser schedule the next frame
 }
 
 function startGameIfReady() {
-    // This function checks if both conditions are met
     if (isWindowLoaded && imagesLoaded === totalImages) {
-        // Both window and images are loaded, safe to start the game loop
-        requestAnimationFrame(gameLoop);
+        console.log("Starting game loop");
+        lastTime = 0; // Initialize lastTime before starting loop
+        requestAnimationFrame(gameLoop); // Start the loop
     }
 }
 
