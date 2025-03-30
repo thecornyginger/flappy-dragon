@@ -17,6 +17,10 @@ const ANIMATION_THROTTLE = 20; // Keep animation frame-based for now, or adjust 
 const MAX_UP_ROTATION_DEG = -15; // Max upward tilt in degrees (negative for up)
 const MAX_DOWN_ROTATION_DEG = 80;  // Max downward tilt in degrees
 const ROTATION_VELOCITY_SCALE = 600; // Lower value = more sensitive rotation to velocity changes (tune this!)
+const MIN_OBSTACLE_GAP_FACTOR = 0.20; // Example: Minimum gap as factor of height
+const MAX_OBSTACLE_GAP_FACTOR = 0.35; // Example: Maximum gap as factor of height
+const MIN_SPAWN_DISTANCE_FACTOR = 0.4; // Example: Minimum distance as factor of width
+const MAX_SPAWN_DISTANCE_FACTOR = 0.7; // Example: Maximum distance as factor of width
 
 // --- Image Loading Management ---
 let imagesLoaded = 0;
@@ -33,6 +37,7 @@ function imageLoaded() {
 // --- Game Variables ---
 let beholderX, beholderY, velocityY;
 let obstacles = [];
+let obstaclePool = [];
 let score = 0;
 let highScore = 0; // <<< ADD High Score variable
 let frameCount = 0; // Used for animation throttling
@@ -60,7 +65,7 @@ const groundImg = new Image(); // Ground image object
 
 // --- Load Sounds ---
 const wingSound = new Audio('sounds/wing.wav'); // Replace with your actual file path
-const coinSound = new Audio('sounds/point.wav'); // Replace with your actual file path
+// const coinSound = new Audio('sounds/point.wav'); // Keep this if needed for preload checks
 const punchSound = new Audio('sounds/hit.wav'); // Replace with your actual file path
 const dieSound = new Audio('sounds/die.wav'); // <<< ADD Die sound object
 const backgroundMusic = new Audio('sounds/skyrim-snes.mp3'); // <<< ADD Background Music
@@ -103,6 +108,7 @@ groundImg.src = 'images/base.png';
 
 // --- Game Initialization ---
 function resetGame() {
+    console.log("Resetting game... Checking obstaclePool:", typeof obstaclePool); // <<< ADD DEBUG LOG
     // !!! Recalculate dynamic sizes based on current canvas dimensions !!!
     beholderSize = canvas.height * BEHOLDER_SIZE_FACTOR;
     obstacleWidth = canvas.height * OBSTACLE_WIDTH_FACTOR; // Often makes sense to scale width based on height
@@ -145,6 +151,20 @@ function resetGame() {
     // Respawn obstacles based on new dimensions
     // Clear existing obstacles first (done above)
     spawnInitialObstacles();
+
+    // Clear and Pool Obstacles
+    if (obstacles && obstaclePool) { // <<< Defensive check added
+        obstacles.forEach(obs => {
+            obs.deactivate();
+            obstaclePool.push(obs);
+        });
+        obstacles = [];
+    } else {
+        console.error("obstacles or obstaclePool not defined during reset!"); // <<< ADD ERROR LOG
+        obstacles = []; // Still clear active obstacles
+    }
+
+    console.log("Game reset complete. State:", gameState);
 }
 
 function spawnInitialObstacles() {
@@ -245,70 +265,130 @@ function Beholder(deltaTime) {
     }
 }
 
-function Obstacle(x, gapTopY) {
-    this.x = x;
-    this.topHeight = gapTopY;
-    // Use the dynamically calculated obstacleGap
-    this.bottomY = this.topHeight + obstacleGap;
-    // Calculate bottom pipe height based on ground position
-    this.bottomHeight = Math.max(0, groundY - this.bottomY);
-    this.scored = false;
-
-    this.draw = function() {
-        // Draw top obstacle (Stalactite) - Use dynamic obstacleWidth
-        if (stalactiteImg.complete && stalactiteImg.naturalHeight !== 0) {
-            ctx.drawImage(stalactiteImg, this.x, 0, obstacleWidth, this.topHeight);
-        }
-
-        // Draw bottom obstacle (Stalagmite) - Use dynamic obstacleWidth
-        if (stalagmiteImg.complete && stalagmiteImg.naturalHeight !== 0) {
-            ctx.drawImage(stalagmiteImg, this.x, this.bottomY, obstacleWidth, this.bottomHeight);
-        }
-    };
-
-    this.update = function(deltaTime) {
-        // Use dynamic obstacleSpeed
-        this.x -= obstacleSpeed * deltaTime;
-
-        // --- Scoring Check --- Use dynamic beholderX and beholderSize
-        let beholderRightEdgeForScore = beholderX + beholderSize * 0.5;
-
-        if (!this.scored && (this.x + obstacleWidth) < beholderRightEdgeForScore) {
-                score++;
-                playSound(coinSound.src);
-                this.scored = true;
-                console.log("Score:", score); // Keep for debugging
-        }
-    };
-}
-
-function addObstacle(startX) {
-    // Calculate dynamic margins and gap
-    const verticalMargin = canvas.height * OBSTACLE_VERTICAL_MARGIN_FACTOR;
-    const currentGap = obstacleGap; // Use the globally set dynamic gap
-
-    const minGapTop = verticalMargin;
-    // Ensure groundY is valid before calculating maxGapTop
-    const currentGroundY = groundY > 0 ? groundY : canvas.height; // Use canvas.height as fallback if groundY isn't set
-    const maxGapTop = currentGroundY - currentGap - verticalMargin;
-
-    let gapTopY;
-
-    // Ensure minGapTop is less than maxGapTop to prevent errors
-    if (minGapTop >= maxGapTop) {
-        console.error(`Obstacle GAP calculation error. minGapTop: ${minGapTop.toFixed(1)}, maxGapTop: ${maxGapTop.toFixed(1)} (groundY: ${currentGroundY.toFixed(1)}, gap: ${currentGap.toFixed(1)}). Centering gap.`);
-        // Center the dynamic gap vertically
-        gapTopY = (currentGroundY / 2) - (currentGap / 2);
-    } else {
-        // Calculate the random top position for the gap
-        gapTopY = Math.random() * (maxGapTop - minGapTop) + minGapTop;
+// --- Obstacle Class ---
+class Obstacle {
+    constructor() {
+        // Initialize properties that might change when reused
+        this.x = 0;
+        this.width = obstacleWidth;
+        this.gapY = 0; // Center Y position of the gap
+        this.gapHeight = obstacleGap; // Use the current dynamic gap
+        this.passed = false; // For scoring
+        this.topHeight = 0; // Calculated in reset
+        this.bottomY = 0; // Calculated in reset
+        this.active = false; // <<< ADD: Flag to indicate if it's in the game or pool
+        // Determine if it's a top (stalactite) or bottom (stalagmite) obstacle implicitly
+        // We'll draw both parts using the appropriate images in the draw method.
     }
 
-    // Ensure gapTopY is reasonable (e.g., not negative)
-    gapTopY = Math.max(0, gapTopY);
+    // <<< ADD: Method to reset and activate an obstacle from the pool
+    reset(startX) {
+        this.x = startX;
+        this.width = canvas.height * OBSTACLE_WIDTH_FACTOR; // Or however width is determined
+        this.gapHeight = canvas.height * OBSTACLE_GAP_FACTOR;
+        const minGapY = canvas.height * OBSTACLE_VERTICAL_MARGIN_FACTOR + this.gapHeight / 2;
+        const maxGapY = canvas.height * (1 - OBSTACLE_VERTICAL_MARGIN_FACTOR) - this.gapHeight / 2;
 
-    console.log(`Adding obstacle at x=${startX.toFixed(1)} with gapTopY=${gapTopY.toFixed(1)}`);
-    obstacles.push(new Obstacle(startX, gapTopY));
+        if (minGapY >= maxGapY) {
+            this.gapY = canvas.height / 2;
+            // console.warn("Obstacle vertical margins/gap too large, falling back.");
+        } else {
+            this.gapY = Math.random() * (maxGapY - minGapY) + minGapY;
+        }
+        this.topHeight = Math.max(0, this.gapY - this.gapHeight / 2);
+        this.bottomY = Math.min(canvas.height, this.gapY + this.gapHeight / 2);
+        this.passed = false;
+        this.active = true;
+    }
+
+    update(deltaTime) {
+        if (!this.active) return;
+        this.x -= obstacleSpeed * deltaTime;
+
+        // Scoring check
+        if (!this.passed && this.x + this.width < beholderX) {
+            score++;
+            if (score > highScore) {
+                highScore = score;
+                // localStorage.setItem('flappyDragonHighScore', highScore);
+            }
+            this.passed = true;
+
+            // Dynamically adjust next obstacle's properties
+            obstacleGap = canvas.height * (Math.random() * (MAX_OBSTACLE_GAP_FACTOR - MIN_OBSTACLE_GAP_FACTOR) + MIN_OBSTACLE_GAP_FACTOR);
+            obstacleSpawnDistance = canvas.width * (Math.random() * (MAX_SPAWN_DISTANCE_FACTOR - MIN_SPAWN_DISTANCE_FACTOR) + MIN_SPAWN_DISTANCE_FACTOR);
+
+            updateScoreDisplay();
+
+            // --- Play Score Sound (Allow Overlap) --- <<< MODIFY
+            // Create a new Audio object each time to allow overlap
+            const soundToPlay = new Audio('sounds/point.wav'); // Use the correct path
+            // Optional: Set volume if needed
+            // soundToPlay.volume = 0.5; // Example: Set volume to 50%
+
+            console.log("Playing new instance of coin sound..."); // Debug log
+
+            soundToPlay.play().catch(e => {
+                console.error("Error playing dynamic coin sound instance:", e);
+            });
+            // ----------------------------------------
+        }
+    }
+
+    draw() {
+        if (!this.active || !ctx || !canvas || this.width <= 0) return;
+
+        // --- Draw Stalactite (Top) --- <<< REVERT TO SIMPLER DRAWING
+        // Draw into the rectangle from canvas top (0) to gap top (this.topHeight)
+        if (stalactiteImg.complete && this.topHeight > 0) {
+             ctx.drawImage(
+                stalactiteImg,
+                this.x,         // dx: Left edge
+                0,              // dy: Canvas top edge
+                this.width,     // dWidth: Obstacle width
+                this.topHeight  // dHeight: Fill space down to the gap top
+            );
+        } else if (this.topHeight > 0) { // Fallback rectangle
+            ctx.fillStyle = '#A9A9A9';
+            ctx.fillRect(this.x, 0, this.width, this.topHeight);
+        }
+
+        // --- Draw Stalagmite (Bottom) --- <<< REVERT TO SIMPLER DRAWING
+        // Draw into the rectangle from gap bottom (this.bottomY) to canvas bottom
+        const spaceBelowGap = canvas.height - this.bottomY;
+        if (stalagmiteImg.complete && spaceBelowGap > 0) {
+             ctx.drawImage(
+                stalagmiteImg,
+                this.x,              // dx: Left edge
+                this.bottomY,        // dy: Gap bottom edge
+                this.width,          // dWidth: Obstacle width
+                spaceBelowGap        // dHeight: Fill space down to canvas bottom
+            );
+        } else if (spaceBelowGap > 0) { // Fallback rectangle
+             ctx.fillStyle = '#A9A9A9';
+             ctx.fillRect(this.x, this.bottomY, this.width, spaceBelowGap);
+        }
+    }
+
+    // <<< ADD: Method to deactivate and return to pool
+    deactivate() {
+        this.active = false;
+    }
+}
+
+// --- Obstacle Management ---
+function addObstacle(startX) {
+    console.log('addObstacle: Checking obstaclePool:', typeof obstaclePool); // <<< ADD DEBUG LOG
+    let obs;
+    if (obstaclePool && obstaclePool.length > 0) { // <<< Defensive check added
+        obs = obstaclePool.pop(); // Reuse from pool
+        console.log("Reusing obstacle from pool.");
+    } else {
+        obs = new Obstacle(); // Create new if pool is empty
+        console.log("Creating new obstacle.");
+    }
+    obs.reset(startX); // Reset/initialize its properties
+    obstacles.push(obs); // Add to active obstacles
 }
 
 function manageObstacles() {
@@ -370,7 +450,7 @@ function checkCollisions() {
         if (beholderRight > obstacleCollisionLeftEdge && beholderLeft < obstacleCollisionRightEdge) {
             if (beholderTop < obs.topHeight || beholderBottom > obs.bottomY) {
                  console.log("Obstacle Collision");
-                 // playSound(dieSound.src); // Ensure this was moved correctly to gameLoop
+                // playSound(dieSound.src); // Ensure this was moved correctly to gameLoop
                 return true;
             }
         }
@@ -576,16 +656,23 @@ function gameLoop(timestamp) {
         // Only update position and check scoring/removal in 'playing' state
         if (gameState === 'playing') {
             obs.update(deltaTime); // Pass deltaTime
-            if (obs.x + obstacleWidth < 0) {
-                obstacles.splice(i, 1);
+
+            // --- Check if obstacle is off-screen --- <<< MODIFY
+            if (obs.x + obs.width < 0) {
+                obs.deactivate(); // Mark as inactive
+                obstaclePool.push(obs); // Add to pool
+                obstacles.splice(i, 1); // Remove from active array
+                // console.log(`Obstacle moved to pool. Pool size: ${obstaclePool.length}, Active: ${obstacles.length}`);
             }
         }
     }
 
     // Add new obstacles only when playing - use dynamic distances
     if (gameState === 'playing') {
-         if (obstacles.length === 0 || (obstacles.length > 0 && obstacles[obstacles.length - 1].x < canvas.width - obstacleSpawnDistance)) {
-             addObstacle(canvas.width);
+         // Check distance based on the last obstacle added
+         const lastObstacleX = obstacles.length > 0 ? obstacles[obstacles.length - 1].x : -Infinity;
+         if (lastObstacleX < canvas.width - obstacleSpawnDistance) {
+             addObstacle(canvas.width); // Add new obstacle starting at the right edge
          }
      }
 
@@ -665,7 +752,7 @@ function startGameIfReady() {
 
 // Ensure game initialization happens after the HTML document is fully loaded
 window.onload = function() {
-    console.log("Window loaded.");
+    console.log("Window loaded. Checking obstaclePool:", typeof obstaclePool); // <<< ADD DEBUG LOG
     canvas = document.getElementById('gameCanvas');
     if (!canvas) {
         console.error("Canvas element with ID 'gameCanvas' not found!");
@@ -777,3 +864,40 @@ function handleFirstInteraction() {
 // Add this handler to your initial interaction listener
 // E.g., canvas.addEventListener('click', handleFirstInteraction, { once: true });
 // E.g., document.addEventListener('keydown', handleFirstInteraction, { once: true }); // if spacebar starts
+
+// --- Scoring Display ---
+// Assume you have a drawScore function defined elsewhere like this:
+/*
+function drawScore() {
+    if (!ctx) return;
+    ctx.fillStyle = 'white';
+    ctx.font = '30px "Press Start 2P"';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(`Score: ${score}`, 20, 20);
+    // Potentially draw high score too
+    ctx.fillText(`High: ${highScore}`, 20, 60);
+}
+*/
+
+// <<< ADD THIS FUNCTION DEFINITION >>>
+// Simple function to trigger the score redraw immediately when called
+function updateScoreDisplay() {
+    // We don't need to do anything complex here,
+    // just ensure the main drawScore function (called in gameLoop)
+    // has the updated 'score' value next time it runs.
+    // However, if you want the score to visually update *instantly*
+    // without waiting for the next gameLoop frame, you could call drawScore here.
+    // Calling drawScore() here might draw the score twice per frame briefly (here and in gameLoop)
+    // but ensures immediate visual feedback upon passing an obstacle.
+    // For simplicity and to match the previous code's apparent intent, let's leave it empty
+    // OR call drawScore if immediate update is desired despite potential double-draw.
+
+    // Option A: Do nothing here, gameLoop's drawScore will handle it. (Recommended for cleanliness)
+        // The score variable is already updated globally.
+
+    // Option B: Call drawScore for immediate visual update (might draw score twice in one frame).
+    // drawScore();                 // Uncomment this line if you want instant visual update
+
+    // Option C: If you had a dedicated HTML element for score, you'd update its text content here.
+}
