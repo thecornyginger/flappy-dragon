@@ -7,16 +7,22 @@ body {
     font-family: 'Press Start 2P', cursive;
     color: #e0e0e0;
     overflow: hidden; /* Prevent scrollbars */
+    padding: 10px; /* Add some padding for small screens */
+    box-sizing: border-box; /* Include padding in width calculation */
 }
 
 .container {
     text-align: center;
+    width: 100%; /* Allow container to shrink */
+    max-width: 400px; /* Limit maximum width */
+    margin: 0 auto; /* Center container */
 }
 
 h1 {
     color: #ffcc00; /* Gold title */
     margin-bottom: 10px;
-    font-size: 1.8em;
+    /* Use clamp for responsive font size: min, preferred, max */
+    font-size: clamp(1.2rem, 6vw, 1.8rem);
     text-shadow: 2px 2px #8b0000; /* Dark red shadow */
 }
 
@@ -24,12 +30,31 @@ canvas {
     border: 5px solid #4a2e4f; /* Darker purple border */
     background-color: #1a111e; /* Very dark background for the cave */
     display: block;
-    margin: 0 auto;
+    /* Make canvas responsive */
+    width: 100%; /* Fill container width */
+    height: auto; /* Maintain aspect ratio based on width */
+    aspect-ratio: 400 / 600; /* Explicitly set aspect ratio (width / height) */
+    /* max-width: 400px; <-- Handled by container */
+    /* margin: 0 auto; <-- Handled by container centering */
     box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+    image-rendering: pixelated; /* Keeps pixel art crisp when scaled */
+    image-rendering: -moz-crisp-edges; /* Firefox */
+    image-rendering: crisp-edges; /* Fallback */
 }
 
 .controls {
     margin-top: 15px;
-    font-size: 0.8em;
+    /* Use clamp for responsive font size */
+    font-size: clamp(0.6rem, 2.5vw, 0.8rem);
     color: #aaa;
+}
+
+/* Optional: Slightly larger controls text on wider screens if needed */
+@media (min-width: 450px) {
+    .controls {
+        font-size: 0.8rem;
+    }
+     h1 {
+         font-size: 1.8rem;
+     }
 }
