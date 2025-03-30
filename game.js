@@ -6,12 +6,13 @@ let isWindowLoaded = false; // <-- Add this flag
 // --- Game Constants ---
 const GRAVITY = 1800;  // Pixels per second per second (adjust significantly upwards)
 const LIFT = -500;     // Pixels per second (instantaneous velocity change, adjust magnitude)
-const BEHOLDER_SIZE = 50;
-const OBSTACLE_WIDTH = 60;
+const BEHOLDER_SIZE_FACTOR = 0.08; // <<< Relative size (e.g., 8% of height)
+const OBSTACLE_WIDTH_FACTOR = 0.1; // <<< Relative width (e.g., 10% of height)
 const OBSTACLE_COLLISION_WIDTH_FACTOR = 0.6; // Keep this from previous step
-const OBSTACLE_GAP = 180;
-const OBSTACLE_SPEED = 125; // Pixels per second (adjust)
-const OBSTACLE_SPAWN_DISTANCE = 150;
+const OBSTACLE_GAP_FACTOR = 0.35; // <<< Relative gap (e.g., 28% of height)
+const OBSTACLE_SPEED_FACTOR = 0.5; // <<< Relative speed (e.g., pixels per second = factor * canvas.width)
+const OBSTACLE_SPAWN_DISTANCE_FACTOR = 0.4; // <<< Relative spawn distance (e.g., 40% of canvas.width)
+const OBSTACLE_VERTICAL_MARGIN_FACTOR = 0.08; // <<< Relative margin (e.g., 8% of height from top/ground)
 const ANIMATION_THROTTLE = 20; // Keep animation frame-based for now, or adjust later
 const MAX_UP_ROTATION_DEG = -15; // Max upward tilt in degrees (negative for up)
 const MAX_DOWN_ROTATION_DEG = 80;  // Max downward tilt in degrees
@@ -39,7 +40,14 @@ let gameState = 'start'; // 'start', 'playing', 'gameOver'
 let animationFrameIndex = 0; // Index for beholder animation frames
 let groundX = 0; // <<< ADD: X position of the scrolling ground
 let groundY = 0; // <<< ADD: Y position of the ground (calculated later)
-const GROUND_HEIGHT = 50; // <<< ADD: Adjust based on your base.png height if needed
+// const GROUND_HEIGHT = 50; // <<< REMOVE: We calculate groundY based on image or dynamically
+
+// Dynamically calculated constants (initialized in resetGame/resize)
+let beholderSize = 50;
+let obstacleWidth = 60;
+let obstacleGap = 180;
+let obstacleSpeed = 125;
+let obstacleSpawnDistance = 150;
 
 // --- Load Images ---
 const beholderImg = new Image();
@@ -95,29 +103,57 @@ groundImg.src = 'images/base.png';
 
 // --- Game Initialization ---
 function resetGame() {
+    // !!! Recalculate dynamic sizes based on current canvas dimensions !!!
+    beholderSize = canvas.height * BEHOLDER_SIZE_FACTOR;
+    obstacleWidth = canvas.height * OBSTACLE_WIDTH_FACTOR; // Often makes sense to scale width based on height
+    obstacleGap = canvas.height * OBSTACLE_GAP_FACTOR;
+    obstacleSpeed = canvas.width * OBSTACLE_SPEED_FACTOR;
+    obstacleSpawnDistance = canvas.width * OBSTACLE_SPAWN_DISTANCE_FACTOR;
+
+    console.log(`Dynamic sizes set: beholder=${beholderSize.toFixed(1)}, obsWidth=${obstacleWidth.toFixed(1)}, obsGap=${obstacleGap.toFixed(1)}, obsSpeed=${obstacleSpeed.toFixed(1)}, obsSpawnDist=${obstacleSpawnDistance.toFixed(1)}`);
+
+    // --- Reset Player State ---
+    beholderX = canvas.width / 3; // Position beholder relative to width
     beholderY = canvas.height / 2;
     velocityY = 0;
+
+    // --- Reset Game State ---
     obstacles = [];
     score = 0;
     gameState = 'start';
     frameCount = 0;
     animationFrameIndex = 0; // Reset animation index
     groundX = 0; // Reset ground scroll position
-    // Calculate initial groundY based on constant or potentially loaded image if available NOW
-    groundY = (groundImg.complete && groundImg.naturalHeight !== 0) ? canvas.height - groundImg.naturalHeight : canvas.height - GROUND_HEIGHT;
+
+    // Recalculate groundY based on current canvas height and image height
+    if (groundImg.complete && groundImg.naturalHeight !== 0) {
+         groundY = canvas.height - groundImg.naturalHeight;
+    } else {
+         // Fallback: Make ground a certain percentage of height if image fails
+         console.warn("Ground image not loaded/ready in resetGame, using fallback height.")
+         groundY = canvas.height * (1 - OBSTACLE_VERTICAL_MARGIN_FACTOR); // Example: Ground takes bottom margin space
+    }
+    console.log(`groundY calculated: ${groundY.toFixed(1)}`);
+
 
     // Stop and reset music on game reset
     backgroundMusic.pause();
     backgroundMusic.currentTime = 0;
 
-    console.log("Game Reset");
+    console.log("Game Reset Complete");
+
+    // Respawn obstacles based on new dimensions
+    // Clear existing obstacles first (done above)
+    spawnInitialObstacles();
 }
 
 function spawnInitialObstacles() {
-     // Start first obstacle further out
-    addObstacle(canvas.width + 100);
-    addObstacle(canvas.width + 100 + OBSTACLE_SPAWN_DISTANCE);
-    addObstacle(canvas.width + 100 + 2 * OBSTACLE_SPAWN_DISTANCE);
+    obstacles = []; // Clear obstacles explicitly here too
+     // Start first obstacle further out, relative to new width
+    addObstacle(canvas.width + obstacleWidth); // Start just off screen
+    addObstacle(canvas.width + obstacleWidth + obstacleSpawnDistance);
+    addObstacle(canvas.width + obstacleWidth + 2 * obstacleSpawnDistance);
+    console.log("Initial obstacles spawned");
 }
 
 // --- Helper Function ---
@@ -146,8 +182,8 @@ function Beholder(deltaTime) {
         beholderY += velocityY * deltaTime; // Position update over time
 
         // --- Stop at ground (groundY) ONLY when game is over ---
-        if (gameState === 'gameOver' && beholderY >= groundY - BEHOLDER_SIZE / 2) {
-            beholderY = groundY - BEHOLDER_SIZE / 2; // Pin to TOP of ground image
+        if (gameState === 'gameOver' && beholderY >= groundY - beholderSize / 2) { // Use dynamic beholderSize
+            beholderY = groundY - beholderSize / 2; // Pin to TOP of ground image
             velocityY = 0; // Stop further falling
         }
     }
@@ -169,7 +205,7 @@ function Beholder(deltaTime) {
         rotationAngle = Math.max(maxUpRad, Math.min(targetAngle, maxDownRad));
 
         // --- Pin rotation when on ground (groundY) during game over ---
-        if (gameState === 'gameOver' && beholderY >= groundY - BEHOLDER_SIZE / 2) {
+        if (gameState === 'gameOver' && beholderY >= groundY - beholderSize / 2) {
              rotationAngle = maxDownRad; // Force max down rotation when grounded
         }
     }
@@ -193,17 +229,17 @@ function Beholder(deltaTime) {
 
     // --- Drawing with Rotation ---
     if (imageToDraw && imageToDraw.complete && imageToDraw.naturalHeight !== 0) { // Check again before drawing
-        const centerX = canvas.width / 3;
+        const centerX = beholderX; // Use dynamic beholderX
         const centerY = beholderY;
         ctx.save();
         ctx.translate(centerX, centerY);
         ctx.rotate(rotationAngle);
         ctx.drawImage(
             imageToDraw, // Use the selected image
-            -BEHOLDER_SIZE / 2,
-            -BEHOLDER_SIZE / 2,
-            BEHOLDER_SIZE,
-            BEHOLDER_SIZE
+            -beholderSize / 2, // Use dynamic beholderSize
+            -beholderSize / 2, // Use dynamic beholderSize
+            beholderSize,     // Use dynamic beholderSize
+            beholderSize      // Use dynamic beholderSize
         );
         ctx.restore();
     }
@@ -212,33 +248,34 @@ function Beholder(deltaTime) {
 function Obstacle(x, gapTopY) {
     this.x = x;
     this.topHeight = gapTopY;
-    this.bottomY = this.topHeight + OBSTACLE_GAP;
+    // Use the dynamically calculated obstacleGap
+    this.bottomY = this.topHeight + obstacleGap;
+    // Calculate bottom pipe height based on ground position
     this.bottomHeight = Math.max(0, groundY - this.bottomY);
     this.scored = false;
 
     this.draw = function() {
-        // Draw top obstacle (Stalactite)
+        // Draw top obstacle (Stalactite) - Use dynamic obstacleWidth
         if (stalactiteImg.complete && stalactiteImg.naturalHeight !== 0) {
-            ctx.drawImage(stalactiteImg, this.x, 0, OBSTACLE_WIDTH, this.topHeight);
+            ctx.drawImage(stalactiteImg, this.x, 0, obstacleWidth, this.topHeight);
         }
 
-        // Draw bottom obstacle (Stalagmite) - starts at bottomY, height fills to groundY
+        // Draw bottom obstacle (Stalagmite) - Use dynamic obstacleWidth
         if (stalagmiteImg.complete && stalagmiteImg.naturalHeight !== 0) {
-            // Draw the pillar image starting from its calculated top edge down towards the ground
-            ctx.drawImage(stalagmiteImg, this.x, this.bottomY, OBSTACLE_WIDTH, this.bottomHeight);
+            ctx.drawImage(stalagmiteImg, this.x, this.bottomY, obstacleWidth, this.bottomHeight);
         }
     };
 
     this.update = function(deltaTime) {
-        this.x -= OBSTACLE_SPEED * deltaTime;
+        // Use dynamic obstacleSpeed
+        this.x -= obstacleSpeed * deltaTime;
 
-        // --- Scoring Check ---
-        let collisionX = canvas.width / 3;
-        let beholderRightEdgeForScore = collisionX + BEHOLDER_SIZE * 0.5;
+        // --- Scoring Check --- Use dynamic beholderX and beholderSize
+        let beholderRightEdgeForScore = beholderX + beholderSize * 0.5;
 
-        if (!this.scored && (this.x + OBSTACLE_WIDTH) < beholderRightEdgeForScore) {
+        if (!this.scored && (this.x + obstacleWidth) < beholderRightEdgeForScore) {
                 score++;
-                playSound(coinSound.src); // <<< Play coin sound on score increase (Modified: Pass .src)
+                playSound(coinSound.src);
                 this.scored = true;
                 console.log("Score:", score); // Keep for debugging
         }
@@ -246,23 +283,31 @@ function Obstacle(x, gapTopY) {
 }
 
 function addObstacle(startX) {
-    // Calculate random Y position for the top of the gap
-    const minGapTop = 50; // Minimum distance from the top edge
-    const maxGapTop = groundY - OBSTACLE_GAP - 50; // Adjusted max gap top calculation
+    // Calculate dynamic margins and gap
+    const verticalMargin = canvas.height * OBSTACLE_VERTICAL_MARGIN_FACTOR;
+    const currentGap = obstacleGap; // Use the globally set dynamic gap
+
+    const minGapTop = verticalMargin;
+    // Ensure groundY is valid before calculating maxGapTop
+    const currentGroundY = groundY > 0 ? groundY : canvas.height; // Use canvas.height as fallback if groundY isn't set
+    const maxGapTop = currentGroundY - currentGap - verticalMargin;
 
     let gapTopY;
 
     // Ensure minGapTop is less than maxGapTop to prevent errors
     if (minGapTop >= maxGapTop) {
-        // This error *shouldn't* happen now, but keep it as a safeguard
-        console.error(`Obstacle GAP calculation error. minGapTop: ${minGapTop}, maxGapTop: ${maxGapTop} (groundY: ${groundY}, OBSTACLE_GAP: ${OBSTACLE_GAP}). Using fallback.`);
-        gapTopY = canvas.height / 2 - OBSTACLE_GAP / 2; // Center the gap vertically
+        console.error(`Obstacle GAP calculation error. minGapTop: ${minGapTop.toFixed(1)}, maxGapTop: ${maxGapTop.toFixed(1)} (groundY: ${currentGroundY.toFixed(1)}, gap: ${currentGap.toFixed(1)}). Centering gap.`);
+        // Center the dynamic gap vertically
+        gapTopY = (currentGroundY / 2) - (currentGap / 2);
     } else {
         // Calculate the random top position for the gap
         gapTopY = Math.random() * (maxGapTop - minGapTop) + minGapTop;
     }
 
-    // Pass BOTH startX and the calculated gapTopY to the constructor
+    // Ensure gapTopY is reasonable (e.g., not negative)
+    gapTopY = Math.max(0, gapTopY);
+
+    console.log(`Adding obstacle at x=${startX.toFixed(1)} with gapTopY=${gapTopY.toFixed(1)}`);
     obstacles.push(new Obstacle(startX, gapTopY));
 }
 
@@ -274,14 +319,14 @@ function manageObstacles() {
 
         // Check for scoring
         const beholderX = canvas.width / 3;
-        if (!obstacles[i].scored && obstacles[i].x + OBSTACLE_WIDTH < beholderX) {
+        if (!obstacles[i].scored && obstacles[i].x + obstacleWidth < beholderX) {
              score++;
              obstacles[i].scored = true;
              // Maybe play a sound here later
         }
 
         // Remove obstacles that are off-screen left
-        if (obstacles[i].x + OBSTACLE_WIDTH < 0) {
+        if (obstacles[i].x + obstacleWidth < 0) {
             obstacles.splice(i, 1);
         }
     }
@@ -289,19 +334,19 @@ function manageObstacles() {
      // Add new obstacles when the last one is far enough in
      if (gameState === 'playing') {
          const lastObstacle = obstacles[obstacles.length - 1];
-         if(canvas.width - lastObstacle.x >= OBSTACLE_SPAWN_DISTANCE) {
-             addObstacle(lastObstacle.x + OBSTACLE_SPAWN_DISTANCE);
+         if(canvas.width - lastObstacle.x >= obstacleSpawnDistance) {
+             addObstacle(lastObstacle.x + obstacleSpawnDistance);
          }
      }
 }
 
 // --- Collision Detection ---
 function checkCollisions() {
-    const beholderX = canvas.width / 3;
-    const beholderLeft = beholderX - (BEHOLDER_SIZE / 2);
-    const beholderRight = beholderX + (BEHOLDER_SIZE / 2);
-    const beholderTop = beholderY - (BEHOLDER_SIZE / 2);
-    const beholderBottom = beholderY + (BEHOLDER_SIZE / 2);
+    // Use dynamic beholder variables
+    const beholderLeft = beholderX - (beholderSize / 2);
+    const beholderRight = beholderX + (beholderSize / 2);
+    const beholderTop = beholderY - (beholderSize / 2);
+    const beholderBottom = beholderY + (beholderSize / 2);
 
     // Check collision with top boundary
     if (beholderTop < 0) {
@@ -309,28 +354,24 @@ function checkCollisions() {
         return true;
     }
 
-    // --- Check collision with GROUND --- <<< MODIFIED
-    if (beholderBottom >= groundY) { // Check if beholder hits or goes below ground level
+    // Check collision with GROUND
+    if (beholderBottom >= groundY) {
          console.log("Ground Collision");
-        // Set position exactly to ground to prevent sinking further before state change
-         beholderY = groundY - BEHOLDER_SIZE / 2;
-         velocityY = 0; // Stop downward movement immediately
+         beholderY = groundY - beholderSize / 2;
+         velocityY = 0;
         return true;
     }
 
-    // Check collision with obstacles
+    // Check collision with obstacles - Use dynamic obstacleWidth
     for (let obs of obstacles) {
-        // Calculate the effective collision edges for the obstacle
-        // Use the narrower collision factor for horizontal check
-        let obstacleCollisionLeftEdge = obs.x + (OBSTACLE_WIDTH * (1 - OBSTACLE_COLLISION_WIDTH_FACTOR) / 2);
-        let obstacleCollisionRightEdge = obs.x + OBSTACLE_WIDTH - (OBSTACLE_WIDTH * (1 - OBSTACLE_COLLISION_WIDTH_FACTOR) / 2);
+        let obstacleCollisionLeftEdge = obs.x + (obstacleWidth * (1 - OBSTACLE_COLLISION_WIDTH_FACTOR) / 2);
+        let obstacleCollisionRightEdge = obs.x + obstacleWidth - (obstacleWidth * (1 - OBSTACLE_COLLISION_WIDTH_FACTOR) / 2);
 
-        // Check for horizontal overlap (using collision factor)
         if (beholderRight > obstacleCollisionLeftEdge && beholderLeft < obstacleCollisionRightEdge) {
-            // Check for vertical overlap (collision with top or bottom part)
             if (beholderTop < obs.topHeight || beholderBottom > obs.bottomY) {
-                 console.log("Obstacle Collision"); playSound(dieSound.src);
-                return true; // Collision detected
+                 console.log("Obstacle Collision");
+                 // playSound(dieSound.src); // Ensure this was moved correctly to gameLoop
+                return true;
             }
         }
     }
@@ -466,7 +507,7 @@ function handleInput() {
 
 // --- Add Ground Update Function ---
 function updateGround(deltaTime) {
-    groundX -= OBSTACLE_SPEED * deltaTime;
+    groundX -= obstacleSpeed * deltaTime;
     // If ground has scrolled its full width off screen, reset it
     // Use groundImg.width for accurate reset if image is loaded
     const groundWidth = (groundImg.complete && groundImg.naturalWidth) ? groundImg.naturalWidth : canvas.width; // Use image width or fallback
@@ -535,15 +576,15 @@ function gameLoop(timestamp) {
         // Only update position and check scoring/removal in 'playing' state
         if (gameState === 'playing') {
             obs.update(deltaTime); // Pass deltaTime
-            if (obs.x + OBSTACLE_WIDTH < 0) {
+            if (obs.x + obstacleWidth < 0) {
                 obstacles.splice(i, 1);
             }
         }
     }
 
-    // Add new obstacles only when playing
+    // Add new obstacles only when playing - use dynamic distances
     if (gameState === 'playing') {
-         if (obstacles.length === 0 || obstacles[obstacles.length - 1].x < canvas.width - OBSTACLE_SPAWN_DISTANCE) {
+         if (obstacles.length === 0 || (obstacles.length > 0 && obstacles[obstacles.length - 1].x < canvas.width - obstacleSpawnDistance)) {
              addObstacle(canvas.width);
          }
      }
@@ -636,8 +677,15 @@ window.onload = function() {
         return;
     }
 
+    // --- Dynamically Set Canvas Size --- <<< ADD
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    console.log(`Canvas size set to: ${canvas.width}x${canvas.height}`);
+    // ------------------------------------
+
     // Initial estimate is less critical now, but doesn't hurt
-    groundY = canvas.height - GROUND_HEIGHT;
+    // You might need to recalculate groundY based on the new canvas.height
+    // groundY = canvas.height - GROUND_HEIGHT; // Revisit this calculation
 
     // <<< ADD Load High Score >>>
     highScore = parseInt(localStorage.getItem('flappyDragonHighScore')) || 0;
@@ -661,19 +709,44 @@ window.onload = function() {
     });
     // --- End of Added Event Listeners ---
 
-    // Call resetGame AFTER canvas is defined (this call is correct)
-    resetGame(); // Keep this call inside window.onload
+    // Call resetGame AFTER canvas is defined and potentially resized
+    // Note: resetGame might need adjustments for dynamic size
+    resetGame();
 
     // Initialize other game objects AFTER canvas is defined
-    // dragon = new Dragon(50, canvas.height / 2); // Example
-    // pipes = new Pipes(canvas); // Example
-
-    // Setup animation frames AFTER images are loaded (potentially already loaded)
-    // Or ensure setupAnimationFrames is robust enough if called before load complete
     setupAnimationFrames();
 
     isWindowLoaded = true;
-    startGameIfReady();
+    startGameIfReady(); // Make sure this recalculates necessary positions based on new size
+
+    // --- Optional: Add Resize Listener ---
+    window.addEventListener('resize', () => {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        console.log(`Canvas resized to: ${canvas.width}x${canvas.height}`);
+
+        // IMPORTANT: Reset the game to recalculate all positions and sizes
+        resetGame();
+
+        // // Alternative: More complex resize handling without full reset
+        // // Recalculate dynamic constants
+        // beholderSize = canvas.height * BEHOLDER_SIZE_FACTOR;
+        // obstacleWidth = canvas.height * OBSTACLE_WIDTH_FACTOR;
+        // obstacleGap = canvas.height * OBSTACLE_GAP_FACTOR;
+        // obstacleSpeed = canvas.width * OBSTACLE_SPEED_FACTOR;
+        // obstacleSpawnDistance = canvas.width * OBSTACLE_SPAWN_DISTANCE_FACTOR;
+        // // Recalculate ground Y
+        // if (groundImg.complete && groundImg.naturalHeight !== 0) { groundY = canvas.height - groundImg.naturalHeight; } else { groundY = canvas.height * (1 - OBSTACLE_VERTICAL_MARGIN_FACTOR); }
+        // // Reposition beholder?
+        // beholderX = canvas.width / 3;
+        // // Adjust existing obstacle positions/sizes? (Complex!)
+        // // Redraw immediately based on current state
+        // drawBackground();
+        // if (gameState === 'start') drawStartScreen();
+        // else if (gameState === 'playing') { /* Draw playing state */ }
+        // else if (gameState === 'gameOver') drawGameOverScreen();
+    });
+    // ----------------------------------
 };
 
 // --- Assuming you have an AudioContext initialized somewhere ---
